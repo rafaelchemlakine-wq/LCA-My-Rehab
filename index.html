@@ -1,0 +1,1395 @@
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
+
+// ─── PALETTE ─────────────────────────────────────────────
+const C = {
+  teal:"#0F6E56", tealMid:"#1D9E75", tealLight:"#E1F5EE", tealDark:"#085041",
+  amber:"#BA7517", amberLight:"#FAEEDA",
+  red:"#A32D2D", redLight:"#FCEBEB",
+  green:"#3B6D11", greenLight:"#EAF3DE",
+  blue:"#185FA5", blueLight:"#E6F1FB",
+  purple:"#6B35A8", purpleLight:"#F0E9FF",
+  bg:"#F4F6F5", card:"#fff", border:"rgba(0,0,0,0.08)",
+  text:"#1a1a18", text2:"#5F5E5A", text3:"#aaa",
+};
+
+// ─── PHASES ───────────────────────────────────────────────
+const PHASES = [
+  { id:0, short:"Ph.1", title:"Protection", label:"Ph.1 — Protection", color:"#A32D2D", bg:"#FCEBEB", timing:"J0–J21",
+    objectives:"Contrôler l'inflammation, récupérer les amplitudes de base.",
+    defaultCriteria:["Extension complète 0°","Stroke test 0 ou 1A","Flexion ≥ 90°","Marche sans béquilles et sans boiterie","Contraction musculaire volontaire du quadriceps","Mobilité patellaire correcte"],
+    advice:[
+      {icon:"🧊",title:"Glaçage",text:"15–20 min, 3–4×/jour avec protection textile.",alert:false},
+      {icon:"🛌",title:"Élévation",text:"Jambe surélevée au-dessus du cœur (coussins sous le mollet).",alert:false},
+      {icon:"⚖️",title:"Progressivité",text:"Faites souvent un petit peu plutôt que trop d'un coup.",alert:false},
+      {icon:"⚠️",title:"À faire avec vigilance",text:"Montée de marche : avec appui sur la rampe, genou dans l'axe. Marche sans béquilles : progressivement.",alert:"warn"},
+      {icon:"🚫",title:"À éviter absolument",text:"Pas de flexion forcée, pas de pivot.",alert:true},
+      {icon:"🚨",title:"Signal d'alarme",text:"Douleur brutale ou craquement → arrêt immédiat.",alert:true},
+    ],
+    exercises:[
+      {id:"ph1_iso",name:"Contractions isométriques quadriceps",desc:"Genou tendu, contractez 10s.",dosage:"3 × 15 reps",repos:"5s",duree:12,ytId:"RjKq3xEMpMk",tags:["Quadriceps"],advice:"En conscience, sans aller trop vite. Essayez d'avoir une mise en charge équilibrée."},
+      {id:"ph1_flex",name:"Mobilisation passive flexion",desc:"Laissez le poids fléchir doucement.",dosage:"3 × 10 reps",repos:"–",duree:8,ytId:"l42K3lHdJo0",tags:["Amplitude"],advice:"Allez lentement, ne forcez jamais."},
+      {id:"ph1_ext",name:"Extension passive — talons surélevés",desc:"Rouleau sous le talon, pas le genou.",dosage:"2×/jour — 20 min",repos:"–",duree:20,ytId:"kKdYNgbEZUo",tags:["Extension"],advice:"L'extension complète est prioritaire."},
+      {id:"ph1_slr",name:"Straight Leg Raise",desc:"Jambe tendue, levez à 45° avec verrou quadriceps.",dosage:"3 × 15 reps",repos:"30s",duree:10,ytId:"ACaYIFg6Ox8",tags:["Quadriceps"],advice:"Verrouillez le genou avant de lever."},
+      {id:"ph1_hip",name:"Renforcement fessiers & hanche",desc:"Ponts fessiers, abductions.",dosage:"3 × 15 reps",repos:"45s",duree:15,ytId:"Vn3W3A4nJjE",tags:["Hanche"],advice:"Contractez les fessiers à chaque répétition."},
+    ]},
+  { id:1, short:"Ph.2", title:"Réveil Musculaire", label:"Ph.2 — Réactivation", color:"#BA7517", bg:"#FAEEDA", timing:"J21–6 sem.",
+    objectives:"Renforcement analytique du quadriceps et stabilisation de la marche.",
+    defaultCriteria:["Flexion ≥ 120°","Marche sans boiterie","Quad > 60% LSI","Appui monopodal stable","Mobilité patellaire correcte","Contraction quad volontaire de qualité"],
+    advice:[
+      {icon:"🚴",title:"Vélo ergomètre",text:"Dès flexion 100–110°, vélo stationnaire autorisé.",alert:false},
+      {icon:"⚖️",title:"Règle des 24h",text:"Douleur ou gonflement le lendemain = trop chargé.",alert:false},
+      {icon:"🚫",title:"À éviter",text:"Pas de leg extension libre > 45°, pas de course, pas de sauts.",alert:true},
+    ],
+    exercises:[
+      {id:"ph2_squat",name:"Squat bipodal partiel",desc:"Descente contrôlée 60° max.",dosage:"3 × 12 reps",repos:"60s",duree:12,ytId:"AIBouMufiA8",tags:["Quadriceps"],advice:"Genou dans l'axe des orteils."},
+      {id:"ph2_step",name:"Step-up frontal",desc:"Montée marche 15–20 cm, contrôle excentrique.",dosage:"3 × 12 reps",repos:"45s",duree:12,ytId:"dQqApCGd5Ss",tags:["Fonctionnel"],advice:"La descente contrôlée est la partie importante."},
+      {id:"ph2_balance",name:"Appui unipodal",desc:"Jambe opérée, yeux ouverts puis fermés 30s.",dosage:"3 × 30 sec",repos:"30s",duree:8,ytId:"oGtLg5Kf0Os",tags:["Proprioception"],advice:"Concentrez-vous sur un point fixe."},
+      {id:"ph2_curl",name:"Curl ischio-jambiers",desc:"Flexion contre résistance.",dosage:"3 × 12 reps",repos:"45s",duree:10,ytId:"1Tq3QdYUuHs",tags:["IJ"],advice:"Contrôlez la phase de retour."},
+    ]},
+  { id:2, short:"Ph.3", title:"Renforcement", label:"Ph.3 — Renforcement", color:"#185FA5", bg:"#E6F1FB", timing:"6 sem–4 mois",
+    objectives:"Seuils de force pour la course, préparer les impacts.",
+    defaultCriteria:["LSI quad ≥ 70%","Course sans douleur","Y-Balance symétrique","Single hop ≥ 70% LSI","Squat unipodal sans valgus","Stroke test 0"],
+    advice:[
+      {icon:"🏃",title:"Reprise course",text:"Sol plat, pas de douleur, chaussures adaptées.",alert:false},
+      {icon:"🚫",title:"À éviter",text:"Pas de changements de direction, pas de sauts unipodaux.",alert:true},
+    ],
+    exercises:[
+      {id:"ph3_nordic",name:"Nordic curl excentrique",desc:"Descente lente 3–5s.",dosage:"3 × 6 reps",repos:"90s",duree:15,ytId:"d7VB7Tnxgd4",tags:["IJ"],advice:"La descente lente est tout l'exercice."},
+      {id:"ph3_run",name:"Course en ligne droite",desc:"50% → 70% → 80% allure.",dosage:"3 séances/semaine",repos:"–",duree:25,ytId:"aWpXlJBvhXw",tags:["Course"],advice:"Aucune douleur admise."},
+      {id:"ph3_jump",name:"Jump squat bilatéral",desc:"Réception fléchie, genoux dans l'axe.",dosage:"3 × 8 reps",repos:"60s",duree:12,ytId:"Dy28GqFPPLQ",tags:["Pliométrie"],advice:"Atterrissage silencieux = bon amorti."},
+    ]},
+  { id:3, short:"Ph.4", title:"Réathlétisation", label:"Ph.4 — Réathlétisation", color:"#3B6D11", bg:"#EAF3DE", timing:"4–9 mois",
+    objectives:"Qualités athlétiques : puissance, vitesse, réactivité.",
+    defaultCriteria:["LSI quad ≥ 80–90%","Hop tests ≥ 85% LSI","Course parfaite","ACL-RSI ≥ 56","IKDC ≥ 75"],
+    advice:[
+      {icon:"⚡",title:"Progressivité",text:"Changements de direction à 50% d'abord.",alert:false},
+      {icon:"🚫",title:"À éviter",text:"Pas de match, pas de contact.",alert:true},
+    ],
+    exercises:[
+      {id:"ph4_shd",name:"Single hop for distance",desc:"Saut unipodal, qualité de réception.",dosage:"3 × 5 sauts",repos:"90s",duree:15,ytId:"IKECrLKh7Hs",tags:["Saut"],advice:"Qualité > distance."},
+      {id:"ph4_505",name:"505 changement de direction",desc:"Sprint 5m, demi-tour.",dosage:"4 × 4 reps",repos:"2 min",duree:20,ytId:"ZBCgS4OomCk",tags:["Agilité"],advice:"Décélérez avant le pivot."},
+    ]},
+  { id:4, short:"Ph.5", title:"Retour au Sport", label:"Ph.5 — Retour au Sport", color:"#0F6E56", bg:"#E1F5EE", timing:"9–12 mois",
+    objectives:"Retour compétition avec critères validés.",
+    defaultCriteria:["LSI quad ≥ 90%","Hop tests ≥ 90% LSI","ACL-RSI ≥ 68","IKDC ≥ 85","≥ 9 mois"],
+    advice:[
+      {icon:"🏆",title:"Match test",text:"Match test 20 min avant retour complet.",alert:false},
+      {icon:"📋",title:"Validation",text:"Retour validé par kiné ET chirurgien.",alert:true},
+    ],
+    exercises:[
+      {id:"ph5_fifa",name:"FIFA 11+ préventif",desc:"Avant chaque séance.",dosage:"1 × complet",repos:"–",duree:20,ytId:"RtB_0CDYUPU",tags:["Prévention"],advice:"À ne jamais sauter."},
+      {id:"ph5_nordic",name:"Nordic curl entretien",desc:"Maintien à vie.",dosage:"2×/semaine — 3 × 8",repos:"60s",duree:10,ytId:"d7VB7Tnxgd4",tags:["Entretien"],advice:"Continuez même en compétition."},
+    ]},
+];
+
+// ─── MESURES PAR PHASE ────────────────────────────────────
+const PHASE_MESURES = {
+  0: { sections:[
+    { id:"ampli", title:"Amplitudes", icon:"📐", fields:[
+      {key:"extOp", label:"Extension", type:"number", pair:"extSain"},
+      {key:"extSain", label:"Extension saine", type:"number", hidden:true},
+      {key:"flexOp", label:"Flexion", type:"number", pair:"flexSain"},
+      {key:"flexSain", label:"Flexion saine", type:"number", hidden:true},
+    ]},
+    { id:"oedeme", title:"Œdème", icon:"💧", fields:[
+      {key:"stroke", label:"Stroke test", type:"stroke"},
+      {key:"perPat_op", label:"Périmétrie patellaire", type:"number", step:0.1, pair:"perPat_sain"},
+      {key:"perPat_sain", label:"Périmétrie patellaire saine", type:"number", step:0.1, hidden:true},
+      {key:"per10_op", label:"Périmétrie +10cm", type:"number", step:0.1, pair:"per10_sain"},
+      {key:"per10_sain", label:"Périmétrie +10cm saine", type:"number", step:0.1, hidden:true},
+    ]},
+    { id:"activation", title:"Marche, activation & douleur", icon:"🚶", fields:[
+      {key:"boiterie", label:"Boiterie à la marche", type:"choice", opts:["Absente","Légère","Modérée","Importante"]},
+      {key:"inhibitionAMI", label:"Activation musculaire — cotation Sonnerie-Cottet (AMI)", type:"choice", opts:["0 — Contraction normale","1 — Légère inhibition","2 — Inhibition modérée","3 — Inhibition sévère"]},
+      {key:"douleurRepos", label:"Douleur au repos (EVA 0–10)", type:"slider", min:0, max:10},
+      {key:"douleurMarche", label:"Douleur à la marche (EVA 0–10)", type:"slider", min:0, max:10},
+    ]},
+  ]},
+  1: { sections:[
+    { id:"ampli", title:"Amplitudes", icon:"📐", fields:[
+      {key:"extOp", label:"Extension", type:"number", pair:"extSain"},
+      {key:"extSain", label:"Extension saine", type:"number", hidden:true},
+      {key:"flexOp", label:"Flexion", type:"number", pair:"flexSain"},
+      {key:"flexSain", label:"Flexion saine", type:"number", hidden:true},
+    ]},
+    { id:"oedeme", title:"Œdème", icon:"💧", fields:[
+      {key:"stroke", label:"Stroke test", type:"stroke"},
+      {key:"perPat_op", label:"Périmétrie patellaire", type:"number", step:0.1, pair:"perPat_sain"},
+      {key:"perPat_sain", label:"Périmétrie patellaire saine", type:"number", step:0.1, hidden:true},
+    ]},
+    { id:"force", title:"Force musculaire (N)", icon:"💪", fields:[
+      {key:"quadOp_90", label:"Quadriceps à 90°", type:"number", pair:"quadSain_90"},
+      {key:"quadSain_90", label:"Quadriceps sain 90°", type:"number", hidden:true},
+      {key:"ijOp_45", label:"IJ à 45°", type:"number", pair:"ijSain_45"},
+      {key:"ijSain_45", label:"IJ sain 45°", type:"number", hidden:true},
+      {key:"abdOp", label:"Abducteurs", type:"number", pair:"abdSain"},
+      {key:"abdSain", label:"Abducteurs sains", type:"number", hidden:true},
+      {key:"heelOp", label:"Mollet (Heel Rise reps)", type:"number", pair:"heelSain"},
+      {key:"heelSain", label:"Mollet sain", type:"number", hidden:true},
+    ]},
+    { id:"fonctionnel", title:"Tests fonctionnels", icon:"🏃", fields:[
+      {key:"squatUnipodal", label:"Squat unipodal", type:"choice", opts:["Non réalisé","Valgus important","Valgus léger","Correct","Excellent"]},
+      {key:"ybt_ant_op", label:"Y-Balance antérieur", type:"number", step:0.1, pair:"ybt_ant_sain"},
+      {key:"ybt_ant_sain", label:"Y-Balance antérieur sain", type:"number", step:0.1, hidden:true},
+    ]},
+    { id:"douleur", title:"Douleur", icon:"😖", fields:[
+      {key:"douleurRepos", label:"Douleur au repos (EVA)", type:"slider", min:0, max:10},
+      {key:"douleurEffort", label:"Douleur à l'effort (EVA)", type:"slider", min:0, max:10},
+    ]},
+  ]},
+  2: { sections:[
+    { id:"ampli", title:"Amplitudes", icon:"📐", fields:[
+      {key:"extOp", label:"Extension", type:"number", pair:"extSain"},
+      {key:"extSain", label:"Extension saine", type:"number", hidden:true},
+      {key:"flexOp", label:"Flexion", type:"number", pair:"flexSain"},
+      {key:"flexSain", label:"Flexion saine", type:"number", hidden:true},
+    ]},
+    { id:"oedeme", title:"Œdème résiduel", icon:"💧", fields:[
+      {key:"stroke", label:"Stroke test", type:"stroke"},
+    ]},
+    { id:"force", title:"Force musculaire (N)", icon:"💪", fields:[
+      {key:"quadOp_90", label:"Quadriceps à 90°", type:"number", pair:"quadSain_90"},
+      {key:"quadSain_90", label:"Quadriceps sain 90°", type:"number", hidden:true},
+      {key:"quadOp_60", label:"Quadriceps à 60°", type:"number", pair:"quadSain_60"},
+      {key:"quadSain_60", label:"Quadriceps sain 60°", type:"number", hidden:true},
+      {key:"ijOp_45", label:"IJ à 45°", type:"number", pair:"ijSain_45"},
+      {key:"ijSain_45", label:"IJ sain 45°", type:"number", hidden:true},
+      {key:"ijOp_90", label:"IJ à 90°", type:"number", pair:"ijSain_90"},
+      {key:"ijSain_90", label:"IJ sain 90°", type:"number", hidden:true},
+      {key:"abdOp", label:"Abducteurs", type:"number", pair:"abdSain"},
+      {key:"abdSain", label:"Abducteurs sains", type:"number", hidden:true},
+      {key:"addOp", label:"Adducteurs", type:"number", pair:"addSain"},
+      {key:"addSain", label:"Adducteurs sains", type:"number", hidden:true},
+    ]},
+    { id:"fonctionnel", title:"Tests fonctionnels", icon:"🏃", fields:[
+      {key:"squatUnipodal", label:"Squat unipodal", type:"choice", opts:["Non réalisé","Valgus important","Valgus léger","Correct","Excellent"]},
+      {key:"courseQualite", label:"Qualité de la course", type:"choice", opts:["Non réalisée","Boiterie importante","Boiterie légère","Symétrique","Parfaite"]},
+      {key:"ybt_ant_op", label:"Y-Balance antérieur", type:"number", step:0.1, pair:"ybt_ant_sain"},
+      {key:"ybt_ant_sain", label:"Y-Balance antérieur sain", type:"number", step:0.1, hidden:true},
+      {key:"ybt_pm_op", label:"Y-Balance postéro-médial", type:"number", step:0.1, pair:"ybt_pm_sain"},
+      {key:"ybt_pm_sain", label:"Y-Balance postéro-médial sain", type:"number", step:0.1, hidden:true},
+      {key:"h1o", label:"Single hop", type:"number", pair:"h1s"},
+      {key:"h1s", label:"Single hop sain", type:"number", hidden:true},
+      {key:"h2o", label:"Triple hop", type:"number", pair:"h2s"},
+      {key:"h2s", label:"Triple hop sain", type:"number", hidden:true},
+    ]},
+  ]},
+  3: { sections:[
+    { id:"force", title:"Force (N) — Objectif 90%+", icon:"💪", fields:[
+      {key:"quadOp_90", label:"Quadriceps à 90°", type:"number", pair:"quadSain_90"},
+      {key:"quadSain_90", label:"Quadriceps sain 90°", type:"number", hidden:true},
+      {key:"ijOp_45", label:"IJ à 45°", type:"number", pair:"ijSain_45"},
+      {key:"ijSain_45", label:"IJ sain 45°", type:"number", hidden:true},
+      {key:"ijOp_90", label:"IJ à 90°", type:"number", pair:"ijSain_90"},
+      {key:"ijSain_90", label:"IJ sain 90°", type:"number", hidden:true},
+      {key:"addOp", label:"Adducteurs", type:"number", pair:"addSain"},
+      {key:"addSain", label:"Adducteurs sains", type:"number", hidden:true},
+    ]},
+    { id:"sauts", title:"Tests de saut — Objectif ≥ 85% LSI", icon:"🦘", fields:[
+      {key:"h1o", label:"Single hop", type:"number", pair:"h1s"},
+      {key:"h1s", label:"Single hop sain", type:"number", hidden:true},
+      {key:"h2o", label:"Triple hop", type:"number", pair:"h2s"},
+      {key:"h2s", label:"Triple hop sain", type:"number", hidden:true},
+      {key:"h3o", label:"Cross-over hop", type:"number", pair:"h3s"},
+      {key:"h3s", label:"Cross-over hop sain", type:"number", hidden:true},
+      {key:"sideHopOp", label:"Side hop (nb sauts 30s)", type:"number", pair:"sideHopSain"},
+      {key:"sideHopSain", label:"Side hop sain", type:"number", hidden:true},
+    ]},
+    { id:"fonctionnel", title:"Fonctionnel", icon:"🏃", fields:[
+      {key:"courseQualite", label:"Qualité de la course", type:"choice", opts:["Boiterie","Légèrement asymétrique","Symétrique","Parfaite"]},
+      {key:"squatUnipodal", label:"Squat unipodal", type:"choice", opts:["Valgus important","Valgus léger","Correct","Excellent"]},
+    ]},
+  ]},
+  4: { sections:[
+    { id:"force", title:"Force musculaire (N)", icon:"💪", fields:[
+      {key:"quadOp_90", label:"Quadriceps à 90°", type:"number", pair:"quadSain_90"},
+      {key:"quadSain_90", label:"Quadriceps sain 90°", type:"number", hidden:true},
+      {key:"ijOp_45", label:"IJ à 45°", type:"number", pair:"ijSain_45"},
+      {key:"ijSain_45", label:"IJ sain 45°", type:"number", hidden:true},
+    ]},
+    { id:"sauts", title:"Tests de saut — Objectif ≥ 90% LSI", icon:"🦘", fields:[
+      {key:"h1o", label:"Single hop", type:"number", pair:"h1s"},
+      {key:"h1s", label:"Single hop sain", type:"number", hidden:true},
+      {key:"h2o", label:"Triple hop", type:"number", pair:"h2s"},
+      {key:"h2s", label:"Triple hop sain", type:"number", hidden:true},
+      {key:"sideHopOp", label:"Side hop", type:"number", pair:"sideHopSain"},
+      {key:"sideHopSain", label:"Side hop sain", type:"number", hidden:true},
+    ]},
+  ]},
+};
+
+const STROKE_ITEMS = [
+  {v:"3", l:"3 — Épanchement massif, genou très tendu", bg:"#FDEBD0", color:"#C0392B"},
+  {v:"2", l:"2 — Épanchement important",               bg:"#FDEBD0", color:"#E67E22"},
+  {v:"1B",l:"1B — Épanchement modéré",                 bg:"#FEF9E7", color:"#D4AC0D"},
+  {v:"1A",l:"1A — Trace d'épanchement",                bg:"#EAF3DE", color:"#5D8A2E"},
+  {v:"0", l:"0 — Pas d'épanchement",                   bg:"#EAF3DE", color:"#3B6D11"},
+];
+const STROKE_LABELS = Object.fromEntries(STROKE_ITEMS.map(s=>[s.v,s.l]));
+const STROKE_COLORS = Object.fromEntries(STROKE_ITEMS.map(s=>[s.v,{bg:s.bg,color:s.color}]));
+
+const BILANS = [
+  {months:1,label:"Bilan 1 mois",desc:"Extension, flexion, œdème, marche, douleur",phase:0,questionnaires:["koos","ikdc"]},
+  {months:3,label:"Bilan 3 mois",desc:"Force musculaire, ACL-RSI, IKDC, KOOS",phase:1,questionnaires:["aclrsi","ikdc","koos"]},
+  {months:6,label:"Bilan 6 mois",desc:"LSI force, hop tests, Y-Balance",phase:2,questionnaires:["aclrsi","ikdc"]},
+  {months:9,label:"Bilan 9 mois",desc:"Critères RTS, ACL-RSI ≥ 68",phase:3,questionnaires:["aclrsi","ikdc","koos"]},
+  {months:12,label:"Bilan 12 mois",desc:"Bilan annuel complet",phase:4,questionnaires:["aclrsi","ikdc","koos"]},
+];
+
+const QUEST_SCHEDULE = {
+  koos:   {label:"KOOS",desc:"Douleur, symptômes & qualité de vie",recommended:[1,3,12],note:"À remplir à 1 mois, 3 mois et 12 mois post-op"},
+  ikdc:   {label:"IKDC Subjectif",desc:"Fonction globale du genou",recommended:[1,3,6,9],note:"À remplir à 1, 3, 6 et 9 mois post-op"},
+  aclrsi: {label:"ACL-RSI",desc:"Confiance psychologique & retour au sport",recommended:[3,6,9,12],note:"Pas avant 3 mois — à remplir à 3, 6, 9 et 12 mois"},
+};
+
+const ACLRSI_ITEMS=["Avez-vous peur de vous re-blesser le genou en pratiquant un sport ?","Êtes-vous nerveux(se) à l'idée de reprendre le sport ?","Avez-vous des pensées négatives sur votre capacité à reprendre votre sport ?","Pensez-vous que votre genou sera stable lors de la reprise ?","Êtes-vous confiant(e) que votre genou vous permettra toutes les activités souhaitées ?","Trouvez-vous difficile de contrôler vos inquiétudes concernant votre genou ?","Êtes-vous démoralisé(e) à cause de votre blessure ?","Pensez-vous que vous serez performant(e) lors de la reprise ?","Êtes-vous impatient(e) de reprendre le sport ?","Avez-vous peur de vous re-blesser par inadvertance ?","Êtes-vous confiant(e) de jouer à votre niveau d'avant blessure ?","Pensez-vous à la blessure lorsque vous performez ?"];
+const ACLRSI_REV=[0,1,2,5,6,9,11];
+const IKDC_ITEMS=[
+  {text:"Niveau d'activité sans douleur",opts:["Très difficiles (sauts, pivots)","Difficiles (sport intensif)","Modérées (marche rapide)","Légères","Impossible"]},
+  {text:"Fréquence des douleurs (4 dernières semaines)",opts:["Jamais","Mensuellement","Hebdomadairement","Quotidiennement","Constamment"]},
+  {text:"Intensité douleur (0=aucune → 10=insupportable)",type:"slider",min:0,max:10},
+  {text:"Gêne au genou",opts:["Aucune","Légère","Modérée","Sévère","Extrême"]},
+  {text:"Monter un escalier",opts:["Pas de difficulté","Minime","Modérée","Extrême","Impossible"]},
+  {text:"Descendre un escalier",opts:["Pas de difficulté","Minime","Modérée","Extrême","Impossible"]},
+  {text:"Se mettre à genoux",opts:["Pas de difficulté","Minime","Modérée","Extrême","Impossible"]},
+  {text:"S'accroupir",opts:["Pas de difficulté","Minime","Modérée","Extrême","Impossible"]},
+  {text:"S'asseoir genou fléchi 1h+",opts:["Pas de difficulté","Minime","Modérée","Extrême","Impossible"]},
+  {text:"Fonction globale (0=rien → 100=normale)",type:"slider",min:0,max:100},
+];
+const KOOS_SECTIONS=[
+  {id:"pain",title:"Douleur",icon:"❤️",questions:["Fréquence des douleurs","En pivotant","En étendant","En pliant","En marchant terrain plat","En montant/descendant escaliers","La nuit","En étant assis/debout"]},
+  {id:"symp",title:"Symptômes",icon:"⚡",questions:["Gonflement","Craquements","Blocage"]},
+  {id:"adl",title:"Activités quotidiennes",icon:"🚶",questions:["Descendre escaliers","Monter escaliers","Se lever","Se tenir debout","Se baisser"]},
+  {id:"sport",title:"Sport & loisirs",icon:"🏃",questions:["S'accroupir","Courir","Sauter","Pivoter","S'agenouiller"]},
+  {id:"qol",title:"Qualité de vie",icon:"😊",questions:["Conscience du genou","Modification style de vie","Manque de confiance","Difficulté globale"]},
+];
+const KOOS_OPTS=["Jamais/Aucune","Rarement/Légère","Parfois/Modérée","Souvent/Sévère","Toujours/Extrême"];
+
+// ─── HELPERS ──────────────────────────────────────────────
+const lsi=(a,b,inv)=>{const x=parseFloat(a),y=parseFloat(b);if(!x||!y||y===0)return null;return inv?Math.round((y/x)*100):Math.round((x/y)*100);};
+const lsiColor=v=>v===null?"#aaa":v>=90?C.green:v>=70?C.amber:C.red;
+const lsiBg=v=>v===null?"#eee":v>=90?C.greenLight:v>=70?C.amberLight:C.redLight;
+const calcWeeks=d=>{if(!d)return null;return Math.max(0,Math.round((Date.now()-new Date(d))/604800000));};
+const calcMonths=d=>{if(!d)return null;return Math.max(0,Math.round((Date.now()-new Date(d))/(86400000*30.5)));};
+const calcDays=d=>{if(!d)return null;return Math.max(0,Math.round((Date.now()-new Date(d))/86400000));};
+const today=()=>new Date().toISOString().split("T")[0];
+const fmtDate=d=>d?new Date(d).toLocaleDateString("fr-FR"):"–";
+const genCode=()=>Math.floor(1000+Math.random()*9000).toString();
+const validateRPPS=v=>/^\d{11}$/.test(v.trim());
+const fmtPostOp=d=>{if(!d)return"–";const w=calcWeeks(d);return w<8?w+" sem.":calcMonths(d)+" mois";};
+const calcACLRSI=a=>a.filter(x=>x!==null).length<12?null:Math.round(a.reduce((s,v,i)=>s+(ACLRSI_REV.includes(i)?(100-v):v),0)/12);
+const calcIKDC=ans=>{let t=0,c=0;ans.forEach((v,i)=>{if(v===null||v===undefined)return;const item=IKDC_ITEMS[i];if(item.type==="slider"){t+=(i===2?(10-v)*10:v);c++;}else{const n=item.opts.length-1;t+=((n-item.opts.indexOf(v))/n)*100;c++;}});return c<8?null:Math.round(t/c);};
+const calcKOOS=k=>{const s={};KOOS_SECTIONS.forEach(sec=>{const vals=k[sec.id]||[];const f=vals.filter(x=>x!==null);if(f.length<vals.length)return;s[sec.id]=Math.round(100-(f.reduce((a,b)=>a+b,0)/f.length/4)*100);});return s;};
+
+async function loadData(){
+  try{
+    const keys=["lca_stable","lca_v9","lca_v8","lca_v7","lca_v6"];
+    for(const k of keys){
+      try{const r=await window.storage.get(k);if(r){const d=JSON.parse(r.value);if(d&&(d.patients||d.kine)){
+        if(k!=="lca_stable"){
+          await window.storage.set("lca_stable",r.value);
+          // Nettoyage des anciennes clés
+          for(const old of ["lca_v9","lca_v8","lca_v7","lca_v6","lca_v5","lca_v4","lca_v3","lca_v2","lca_v1"]){
+            try{await window.storage.delete(old);}catch{}
+          }
+        }
+        return d;
+      }}}catch{}
+    }
+    return{patients:[],kine:null};
+  }catch{return{patients:[],kine:null};}
+}
+async function saveData(d){try{await window.storage.set("lca_stable",JSON.stringify(d));}catch{}}
+
+function newPatient(id){
+  return{id,nom:"",prenom:"",ddn:"",poids:"",taille:"",sport:"",niveauSport:"",frequenceSport:"",
+    dateOp:"",greffon:"",chirurgien:"",coteOpere:"",notes:"",phase:0,sessions:[],
+    aclrsi:Array(12).fill(null),ikdc:Array(10).fill(null),
+    koos:{pain:Array(8).fill(null),symp:Array(3).fill(null),adl:Array(5).fill(null),sport:Array(5).fill(null),qol:Array(4).fill(null)},
+    douleurJournal:[],notifSent:{},code:genCode(),admissionDone:false,admissionValidated:false,
+    phaseChecks:{},patientNote:""};
+}
+
+// ─── UI ATOMS ─────────────────────────────────────────────
+const Card=({children,style,onClick})=>(<div onClick={onClick} style={{background:C.card,borderRadius:16,padding:"14px 16px",marginBottom:10,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",cursor:onClick?"pointer":undefined,...style}}>{children}</div>);
+const Btn=({children,onClick,primary,sm,full,outlined,danger,style,disabled})=>(<button onClick={onClick} disabled={disabled} style={{padding:sm?"7px 14px":"12px 20px",borderRadius:sm?8:12,fontSize:sm?12:14,fontWeight:600,cursor:disabled?"not-allowed":"pointer",border:outlined?`1.5px solid ${C.teal}`:danger?`1.5px solid ${C.red}`:"none",background:primary?C.teal:danger?C.redLight:outlined?"transparent":"rgba(0,0,0,0.05)",color:primary?"#fff":danger?C.red:outlined?C.teal:C.text,fontFamily:"inherit",width:full?"100%":undefined,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:6,opacity:disabled?0.5:1,transition:"all 0.15s",...style}}>{children}</button>);
+const FInput=({label,hint,...props})=>(<div style={{marginBottom:12}}>{label&&<label style={{fontSize:12,color:C.text2,fontWeight:600,display:"block",marginBottom:4}}>{label}</label>}{hint&&<div style={{fontSize:11,color:C.text3,marginBottom:4}}>{hint}</div>}<input style={{width:"100%",fontSize:14,padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:"#F9F8F4",fontFamily:"inherit",outline:"none",boxSizing:"border-box",WebkitAppearance:"none"}} {...props}/></div>);
+const FSelect=({label,children,...props})=>(<div style={{marginBottom:12}}>{label&&<label style={{fontSize:12,color:C.text2,fontWeight:600,display:"block",marginBottom:4}}>{label}</label>}<select style={{width:"100%",fontSize:13,padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:"#F9F8F4",fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} {...props}>{children}</select></div>);
+const PhaseBadge=({phase,small})=>{const ph=PHASES[phase];return <span style={{fontSize:small?10:11,fontWeight:700,padding:small?"2px 8px":"3px 12px",borderRadius:20,background:ph.bg,color:ph.color,whiteSpace:"nowrap"}}>{ph.label}</span>;};
+const LSIChip=({val})=>(<span style={{fontSize:12,fontWeight:700,padding:"2px 10px",borderRadius:12,background:lsiBg(val),color:lsiColor(val)}}>{val===null?"–":val+"%"}</span>);
+const StatBox=({label,value,color,mini})=>(<div style={{background:color?color+"22":C.tealLight,borderRadius:mini?10:12,padding:mini?"8px 10px":"10px 14px",flex:1,textAlign:"center"}}><div style={{fontSize:mini?16:22,fontWeight:700,color:color||C.teal}}>{value}</div><div style={{fontSize:10,color:(color||C.teal)+"99",marginTop:1,fontWeight:600}}>{label}</div></div>);
+const LSICircle=({val,size=100})=>{const r=(size/2)-8,circ=2*Math.PI*r,col=lsiColor(val),pct=val||0;return(<div style={{position:"relative",width:size,height:size}}><svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#eee" strokeWidth={7}/><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={col} strokeWidth={7} strokeDasharray={`${(pct/100)*circ} ${circ}`} strokeLinecap="round" transform={`rotate(-90 ${size/2} ${size/2})`}/></svg><div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center"}}><div style={{fontSize:size>80?20:13,fontWeight:700,color:col}}>{val!==null?val+"%":"–"}</div><div style={{fontSize:8,color:C.text3}}>LSI</div></div></div>);};
+
+// ════════════════════════════════════════════════════════════
+// APP ROOT
+// ════════════════════════════════════════════════════════════
+export default function App(){
+  const [data,setData]=useState(null);
+  const [mode,setMode]=useState("login");
+  const [selId,setSelId]=useState(null);
+  const [trackingBilan,setTrackingBilan]=useState(null);
+  useEffect(()=>{loadData().then(d=>setData(d));}, []);
+  const save=d=>{setData(d);saveData(d);};
+  const addPt=()=>{const id=Date.now().toString();const nw=newPatient(id);const nd={...data,patients:[...data.patients,nw]};save(nd);return nw;};
+  const updatePt=p=>save({...data,patients:data.patients.map(x=>x.id===p.id?p:x)});
+  const deletePt=id=>{save({...data,patients:data.patients.filter(x=>x.id!==id)});setSelId(null);};
+  const saveKine=k=>save({...data,kine:k});
+  if(!data)return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",color:C.teal,fontFamily:"Inter,sans-serif"}}>Chargement…</div>;
+  const sel=data.patients.find(p=>p.id===selId);
+  return(
+    <div style={{fontFamily:"'Inter',-apple-system,sans-serif",background:C.bg,minHeight:"100vh",maxWidth:430,margin:"0 auto",color:C.text,fontSize:14}}>
+      {mode==="login"&&<LoginScreen kine={data.kine} onSaveKine={saveKine} onKine={()=>setMode("kine")} onPatient={id=>{setSelId(id);setMode("patient");}} patients={data.patients}/>}
+      {mode==="kine"&&<KineApp patients={data.patients} kine={data.kine} onAdd={addPt} onUpdate={updatePt} onDelete={deletePt} onLogout={()=>setMode("login")} selId={selId} setSelId={setSelId} trackingBilan={trackingBilan} setTrackingBilan={setTrackingBilan}/>}
+      {mode==="patient"&&sel&&<PatientApp patient={sel} onUpdate={updatePt} onLogout={()=>{setMode("login");setSelId(null);}}/>}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// LOGIN
+// ════════════════════════════════════════════════════════════
+function LoginScreen({kine,onSaveKine,onKine,onPatient,patients}){
+  const [tab,setTab]=useState("patient");
+  const [code,setCode]=useState("");
+  const [err,setErr]=useState("");
+  const [rpps,setRpps]=useState(kine?.rpps||"10101839693");
+  const [pin,setPin]=useState("");
+  const [confirmPin,setConfirmPin]=useState("");
+  const [isSetup,setIsSetup]=useState(!kine);
+  const [rppsErr,setRppsErr]=useState("");
+  const [pinErr,setPinErr]=useState("");
+
+  const [nom,setNom]=useState("");
+  const [prenom,setPrenom]=useState("");
+  const [ddn,setDdn]=useState("");
+
+  const connectPatient=()=>{
+    setErr("");
+    const p=patients.find(x=>x.code===code.trim());
+    if(!p){setErr("Code invalide. Vérifiez avec votre kiné.");return;}
+    // Vérification nom + prénom + DDN (insensible à la casse et aux espaces)
+    const normalize=s=>(s||"").toLowerCase().trim();
+    const nomOk=normalize(p.nom)===normalize(nom)&&normalize(p.prenom)===normalize(prenom);
+    const ddnOk=!p.ddn||p.ddn===ddn; // si DDN pas encore remplie côté kiné, on passe
+    if(!nomOk||!ddnOk){setErr("Identité incorrecte. Vérifiez vos nom, prénom et date de naissance.");return;}
+    onPatient(p.id);
+  };
+  const setupKine=()=>{setRppsErr("");setPinErr("");if(!validateRPPS(rpps)){setRppsErr("11 chiffres requis.");return;}if(pin.length<6){setPinErr("6 chiffres minimum.");return;}if(pin!==confirmPin){setPinErr("Codes différents.");return;}onSaveKine({rpps:rpps.trim(),pin});onKine();};
+  const loginKine=()=>{setRppsErr("");setPinErr("");if(!kine){setIsSetup(true);return;}if(rpps.trim()!==kine.rpps){setRppsErr("RPPS incorrect.");return;}if(pin!==kine.pin){setPinErr("Code incorrect.");return;}onKine();};
+
+  useEffect(()=>{
+    const h=e=>{if(e.key==="Enter"){if(tab==="kine"){isSetup?setupKine():loginKine();}else connectPatient();}};
+    window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h);
+  },[tab,rpps,pin,confirmPin,isSetup,code]);
+
+  return(
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column"}}>
+      <div style={{background:`linear-gradient(135deg,${C.tealDark},${C.tealMid})`,padding:"44px 24px 28px",textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:8}}>🦵</div>
+        <div style={{fontSize:22,fontWeight:800,color:"#fff",marginBottom:4}}>Suivi LCA</div>
+        <div style={{fontSize:13,color:"rgba(255,255,255,0.75)"}}>Plateforme de rééducation du ligament croisé antérieur</div>
+      </div>
+      <div style={{background:C.card,display:"flex",borderBottom:`0.5px solid ${C.border}`}}>
+        {[["patient","🧑 Espace Patient"],["kine","⚕️ Espace Kiné"]].map(([v,l])=>(<button key={v} onClick={()=>{setTab(v);setErr("");setRppsErr("");setPinErr("");}} style={{flex:1,padding:"14px 0",border:"none",background:"none",cursor:"pointer",fontWeight:700,fontSize:13,color:tab===v?C.teal:C.text3,borderBottom:tab===v?`2.5px solid ${C.teal}`:"2.5px solid transparent",fontFamily:"inherit"}}>{l}</button>))}
+      </div>
+      <div style={{padding:"20px",flex:1}}>
+        {tab==="patient"&&(<Card>
+          <div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:16,fontWeight:700}}>Connexion Patient</div><div style={{fontSize:13,color:C.text2}}>Identifiez-vous pour accéder à votre programme</div></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <FInput label="Nom *" value={nom} onChange={e=>setNom(e.target.value)} placeholder="Dupont"/>
+            <FInput label="Prénom *" value={prenom} onChange={e=>setPrenom(e.target.value)} placeholder="Martin"/>
+          </div>
+          <FInput label="Date de naissance *" type="date" value={ddn} onChange={e=>setDdn(e.target.value)}/>
+          <div style={{marginBottom:14}}>
+            <label style={{fontSize:12,color:C.text2,fontWeight:600,display:"block",marginBottom:6}}>Code praticien (4 chiffres)</label>
+            <input value={code} onChange={e=>setCode(e.target.value.replace(/\D/,"").slice(0,4))} onKeyDown={e=>e.key==="Enter"&&connectPatient()} placeholder="0000" maxLength={4} inputMode="numeric" style={{width:"100%",fontSize:32,fontWeight:800,padding:"12px",border:`1.5px solid ${code.length===4?C.teal:C.border}`,borderRadius:12,background:"#F9F8F4",fontFamily:"inherit",outline:"none",boxSizing:"border-box",letterSpacing:10,textAlign:"center",color:C.teal}}/>
+          </div>
+          {err&&<div style={{fontSize:12,color:C.red,background:C.redLight,padding:"8px 12px",borderRadius:8,marginBottom:10}}>⚠️ {err}</div>}
+          <Btn primary full onClick={connectPatient} disabled={code.length!==4||!nom.trim()||!prenom.trim()||!ddn}>Se connecter →</Btn>
+          <div style={{fontSize:11,color:C.text3,textAlign:"center",marginTop:10,lineHeight:1.5}}>🔒 Vos identifiants sont vérifiés localement et ne sont pas transmis.</div>
+        </Card>)}
+        {tab==="kine"&&(<>
+          <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:C.tealLight,borderRadius:10,marginBottom:14}}><span style={{fontSize:20}}>🛡️</span><div><div style={{fontWeight:700,fontSize:12,color:C.teal}}>Connexion sécurisée RPPS</div></div></div>
+          <Card>
+            <div style={{marginBottom:12}}>
+              <label style={{fontSize:12,color:C.text2,fontWeight:600,display:"block",marginBottom:2}}>Numéro RPPS (11 chiffres)</label>
+              <input value={rpps} onChange={e=>setRpps(e.target.value.replace(/\D/,"").slice(0,11))} onKeyDown={e=>e.key==="Enter"&&(isSetup?setupKine():loginKine())} inputMode="numeric" maxLength={11} style={{width:"100%",fontSize:16,fontWeight:700,padding:"10px 14px",border:`1.5px solid ${rppsErr?C.red:rpps.length===11?C.teal:C.border}`,borderRadius:10,background:"#F9F8F4",fontFamily:"inherit",outline:"none",boxSizing:"border-box",letterSpacing:2}}/>
+              {rppsErr&&<div style={{fontSize:11,color:C.red,marginTop:4}}>⚠️ {rppsErr}</div>}
+            </div>
+            {isSetup&&(<div style={{marginBottom:12}}>
+              <label style={{fontSize:12,color:C.text2,fontWeight:600,display:"block",marginBottom:2}}>Code personnel</label>
+              <input type="password" value={pin} onChange={e=>setPin(e.target.value.replace(/\D/,"").slice(0,8))} onKeyDown={e=>e.key==="Enter"&&setupKine()} inputMode="numeric" placeholder="••••••" style={{width:"100%",fontSize:20,padding:"10px 14px",border:`1.5px solid ${pin.length>=6?C.teal:C.border}`,borderRadius:10,background:"#F9F8F4",fontFamily:"inherit",outline:"none",boxSizing:"border-box",letterSpacing:4,textAlign:"center"}}/>
+              <label style={{fontSize:12,color:C.text2,fontWeight:600,display:"block",marginTop:8,marginBottom:2}}>Confirmer</label>
+              <input type="password" value={confirmPin} onChange={e=>setConfirmPin(e.target.value.replace(/\D/,"").slice(0,8))} onKeyDown={e=>e.key==="Enter"&&setupKine()} inputMode="numeric" placeholder="••••••" style={{width:"100%",fontSize:20,padding:"10px 14px",border:`1.5px solid ${confirmPin&&confirmPin===pin?C.teal:confirmPin?C.red:C.border}`,borderRadius:10,background:"#F9F8F4",fontFamily:"inherit",outline:"none",boxSizing:"border-box",letterSpacing:4,textAlign:"center"}}/>
+              {confirmPin&&confirmPin===pin&&<div style={{fontSize:11,color:C.green,marginTop:4}}>✓ Codes identiques</div>}
+            </div>)}
+            {!isSetup&&(<div style={{marginBottom:12}}>
+              <label style={{fontSize:12,color:C.text2,fontWeight:600,display:"block",marginBottom:2}}>Code personnel</label>
+              <input type="password" value={pin} onChange={e=>setPin(e.target.value.replace(/\D/,"").slice(0,8))} onKeyDown={e=>e.key==="Enter"&&loginKine()} inputMode="numeric" placeholder="••••••" style={{width:"100%",fontSize:20,padding:"10px 14px",border:`1.5px solid ${pin.length>=6?C.teal:C.border}`,borderRadius:10,background:"#F9F8F4",fontFamily:"inherit",outline:"none",boxSizing:"border-box",letterSpacing:4,textAlign:"center"}}/>
+            </div>)}
+            {pinErr&&<div style={{fontSize:12,color:C.red,background:C.redLight,padding:"8px 12px",borderRadius:8,marginBottom:12}}>⚠️ {pinErr}</div>}
+            <Btn primary full onClick={isSetup?setupKine:loginKine} disabled={rpps.length!==11||(pin.length<6)||(isSetup&&pin!==confirmPin)}>{isSetup?"Créer mon compte →":"Accéder →"}</Btn>
+            {kine&&<button onClick={()=>setIsSetup(s=>!s)} style={{background:"none",border:"none",color:C.teal,fontSize:12,cursor:"pointer",fontFamily:"inherit",marginTop:10,width:"100%",textAlign:"center"}}>{isSetup?"← J'ai déjà un compte":"🔄 Réinitialiser"}</button>}
+          </Card>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// ESPACE KINÉ
+// ════════════════════════════════════════════════════════════
+function KineApp({patients,kine,onAdd,onUpdate,onDelete,onLogout,selId,setSelId,trackingBilan,setTrackingBilan}){
+  const [nav,setNav]=useState("patients");
+  const [kTab,setKTab]=useState("dossier");
+  const sel=patients.find(p=>p.id===selId);
+  const pending=patients.filter(p=>p.admissionDone&&!p.admissionValidated).length;
+  const bilansWeek=patients.filter(p=>{if(!p.dateOp)return false;const m=calcMonths(p.dateOp);return BILANS.some(b=>m!==null&&Math.abs(m-b.months)<=0.5);}).length;
+  return(
+    <div style={{display:"flex",flexDirection:"column",minHeight:"100vh"}}>
+      <div style={{flex:1,paddingBottom:80,overflowY:"auto"}}>
+        {nav==="patients"&&!selId&&<KineList patients={patients} kine={kine} onSelect={id=>{setSelId(id);setKTab("dossier");}} onAdd={()=>{const p=onAdd();setSelId(p.id);}} bilansWeek={bilansWeek} pending={pending} onLogout={onLogout}/>}
+        {nav==="patients"&&selId&&sel&&<KineDetail patient={sel} onUpdate={onUpdate} onDelete={()=>{onDelete(sel.id);}} onBack={()=>setSelId(null)} tab={kTab} setTab={setKTab} goToTracking={m=>{setTrackingBilan(m);setNav("tracking");}}/>}
+        {nav==="tracking"&&<KineTracking patients={patients} onSelect={id=>{setSelId(id);setNav("patients");setKTab("bilan");}} focusBilan={trackingBilan} onClearBilan={()=>setTrackingBilan(null)}/>}
+        {nav==="tools"&&<KineTools/>}
+      </div>
+      <BottomNav nav={nav} setNav={v=>{setNav(v);if(v!=="patients")setSelId(null);}} role="kine" badge={pending}/>
+    </div>
+  );
+}
+
+function KineList({patients,kine,onSelect,onAdd,bilansWeek,pending,onLogout}){
+  const [search,setSearch]=useState("");
+  const filtered=patients.filter(p=>`${p.nom} ${p.prenom} ${p.sport}`.toLowerCase().includes(search.toLowerCase()));
+  return(
+    <div style={{padding:"16px 16px 0"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+        <div><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}><span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:20,background:C.tealLight,color:C.teal}}>⚕️ KINÉ</span>{kine?.rpps&&<span style={{fontSize:10,color:C.text3}}>RPPS ···{kine.rpps.slice(-4)}</span>}</div><div style={{fontSize:20,fontWeight:800,color:C.teal}}>ACL Recovery Tracker</div></div>
+        <button onClick={onLogout} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:11,color:C.text2,fontFamily:"inherit"}}>← Déco</button>
+      </div>
+      {pending>0&&<div style={{background:C.amberLight,border:`1px solid ${C.amber}44`,borderRadius:12,padding:"10px 14px",marginBottom:10,display:"flex",gap:10,alignItems:"center"}}><span>📝</span><div style={{fontWeight:700,fontSize:13,color:C.amber}}>{pending} fiche{pending>1?"s":""} à valider</div></div>}
+      <div style={{display:"flex",gap:8,marginBottom:12}}><StatBox label="PATIENTS" value={patients.length}/><StatBox label="BILANS" value={bilansWeek} color={C.teal}/><StatBox label="À VALIDER" value={pending} color={pending>0?C.amber:undefined}/></div>
+      <div style={{position:"relative",marginBottom:10}}><span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:C.text3}}>🔍</span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher…" style={{width:"100%",padding:"10px 12px 10px 36px",borderRadius:12,border:`0.5px solid ${C.border}`,background:C.card,fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/></div>
+      {filtered.length===0&&<div style={{textAlign:"center",padding:"3rem 1rem",color:C.text3}}><div style={{fontSize:40,marginBottom:10}}>🦵</div><div style={{marginBottom:16}}>Aucun patient</div><Btn primary onClick={onAdd}>+ Ajouter</Btn></div>}
+      {filtered.map(p=>{
+        const m=calcMonths(p.dateOp);const last=p.sessions?.length?[...p.sessions].sort((a,b)=>new Date(a.date||0)-new Date(b.date||0)).slice(-1)[0]:null;const lsiQ=last?lsi(last.quadOp_90,last.quadSain_90):null;const ph=PHASES[p.phase];
+        const next=p.dateOp&&m!==null?BILANS.filter(b=>m<b.months).sort((a,b)=>a.months-b.months)[0]:null;
+        const jNext=next?Math.round((new Date(p.dateOp).getTime()+next.months*30.5*86400000-Date.now())/86400000):null;
+        const pend=p.admissionDone&&!p.admissionValidated;
+        return(<Card key={p.id} onClick={()=>onSelect(p.id)} style={{border:pend?`1.5px solid ${C.amber}`:undefined}}>
+          {pend&&<div style={{fontSize:11,fontWeight:700,color:C.amber,background:C.amberLight,padding:"3px 8px",borderRadius:6,marginBottom:6,display:"inline-block"}}>📝 À valider</div>}
+          <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:22,background:ph.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🦵</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}><div style={{fontWeight:700,fontSize:15}}>{p.prenom||"–"} {p.nom||"–"}</div><PhaseBadge phase={p.phase} small/></div>
+              {p.sport&&<div style={{fontSize:12,color:C.text2,marginBottom:2}}>{p.sport}{p.niveauSport?" · "+p.niveauSport:""}</div>}
+              <div style={{fontSize:11,color:C.text3,marginBottom:4}}>🔑 Code : <strong style={{color:C.teal,letterSpacing:2}}>{p.code}</strong></div>
+              {p.dateOp&&<div style={{fontSize:11,color:C.text3,marginBottom:4}}>📅 Op. {fmtDate(p.dateOp)} — <strong style={{color:C.text2}}>{fmtPostOp(p.dateOp)}</strong></div>}
+              {next&&jNext!==null&&<div style={{fontSize:11,padding:"2px 8px",borderRadius:6,background:jNext<=7?C.redLight:C.amberLight,color:jNext<=7?C.red:C.amber,display:"inline-block",marginBottom:4}}>🔔 {next.label} dans {jNext}j</div>}
+              {lsiQ!==null&&<LSICircle val={lsiQ} size={38}/>}
+            </div>
+          </div>
+        </Card>);
+      })}
+      <button onClick={onAdd} style={{position:"fixed",bottom:76,right:16,width:52,height:52,borderRadius:26,background:C.teal,color:"#fff",border:"none",fontSize:26,cursor:"pointer",boxShadow:`0 4px 16px ${C.teal}55`,fontFamily:"inherit"}}>+</button>
+    </div>
+  );
+}
+
+function KineDetail({patient,onUpdate,onDelete,onBack,tab,setTab,goToTracking}){
+  const j=calcDays(patient.dateOp),m=calcMonths(patient.dateOp);
+  return(
+    <div>
+      <div style={{background:C.card,padding:"12px 16px",borderBottom:`0.5px solid ${C.border}`,display:"flex",alignItems:"center",gap:10,position:"sticky",top:0,zIndex:50}}>
+        <button onClick={onBack} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",padding:0}}>←</button>
+        <div style={{flex:1}}><div style={{fontWeight:700,fontSize:15}}>{patient.prenom||"Nouveau"} {patient.nom}</div><div style={{fontSize:11,color:C.text3}}>{patient.sport||"–"} · Code : <strong style={{color:C.teal}}>{patient.code}</strong></div></div>
+        <button onClick={()=>{if(confirm("Supprimer ?"))onDelete();}} style={{background:"none",border:"none",fontSize:18,cursor:"pointer",color:C.text3}}>🗑</button>
+      </div>
+      <div style={{background:C.card,borderBottom:`0.5px solid ${C.border}`,padding:"10px 16px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+          {[["Post-Op",fmtPostOp(patient.dateOp)],["Semaines",j!=null?Math.round(j/7)+"S":"–"],["Sessions",patient.sessions?.length||0],["Phase",(patient.phase+1)+"/5"]].map(([l,v])=>(<div key={l} style={{textAlign:"center"}}><div style={{fontSize:15,fontWeight:700,color:C.teal}}>{v}</div><div style={{fontSize:10,color:C.text3}}>{l}</div></div>))}
+        </div>
+      </div>
+      <div style={{display:"flex",background:C.card,borderBottom:`0.5px solid ${C.border}`,overflowX:"auto"}}>
+        {[["dossier","📁 Dossier"],["bilan","📋 Bilan"],["phases","🏃 Phases"],["historique","📚 Historique"]].map(([v,l])=>(<button key={v} onClick={()=>setTab(v)} style={{padding:"10px 12px",border:"none",background:"none",cursor:"pointer",fontSize:12,fontWeight:600,color:tab===v?C.teal:C.text3,borderBottom:tab===v?`2px solid ${C.teal}`:"2px solid transparent",whiteSpace:"nowrap",fontFamily:"inherit"}}>{l}</button>))}
+      </div>
+      <div style={{padding:"0 16px"}}>
+        {tab==="dossier"&&<KineDossier patient={patient} onUpdate={onUpdate} goToTracking={goToTracking}/>}
+        {tab==="bilan"&&<KineBilan patient={patient} onUpdate={onUpdate}/>}
+        {tab==="phases"&&<KinePhases patient={patient} onUpdate={onUpdate}/>}
+        {tab==="historique"&&<KineHistorique patient={patient} onUpdate={onUpdate}/>}
+      </div>
+    </div>
+  );
+}
+
+function KineDossier({patient,onUpdate,goToTracking}){
+  const [f,setF]=useState({...patient});
+  const set=(k,v)=>setF(x=>({...x,[k]:v}));
+  const ph=PHASES[patient.phase];
+  const m=calcMonths(patient.dateOp);
+  const bilans=patient.dateOp?BILANS.map(b=>({...b,joursRestants:Math.round((new Date(patient.dateOp).getTime()+b.months*30.5*86400000-Date.now())/86400000)})).sort((a,b)=>a.months-b.months):[];
+  return(
+    <div style={{paddingTop:14}}>
+      {patient.admissionDone&&!patient.admissionValidated&&(<div style={{background:C.amberLight,border:`1.5px solid ${C.amber}`,borderRadius:12,padding:"12px 14px",marginBottom:12}}><div style={{fontWeight:700,fontSize:13,color:C.amber,marginBottom:4}}>📝 Fiche à valider</div><Btn primary onClick={()=>onUpdate({...patient,...f,admissionValidated:true})} style={{background:C.amber}}>✓ Valider</Btn></div>)}
+      {patient.admissionValidated&&<div style={{background:C.greenLight,borderRadius:10,padding:"8px 12px",marginBottom:10,fontSize:12,color:C.green,fontWeight:600}}>✅ Fiche validée</div>}
+      <Card style={{background:ph.bg,border:`1px solid ${ph.color}33`}}>
+        <div style={{fontSize:11,fontWeight:700,color:ph.color,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>PHASE ACTUELLE</div>
+        <div style={{fontSize:17,fontWeight:800,color:ph.color,marginBottom:4}}>{ph.label}</div>
+        <div style={{fontSize:12,color:ph.color+"bb",lineHeight:1.6}}>{ph.objectives}</div>
+      </Card>
+      <Card style={{border:`1.5px solid ${C.teal}33`}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div><div style={{fontSize:12,color:C.text2,marginBottom:2}}>🔑 Code d'accès patient</div><div style={{fontSize:28,fontWeight:800,color:C.teal,letterSpacing:6}}>{patient.code}</div></div><button onClick={()=>onUpdate({...patient,code:genCode()})} style={{background:C.tealLight,border:"none",borderRadius:8,padding:"8px 10px",cursor:"pointer",fontSize:11,color:C.teal,fontWeight:600,fontFamily:"inherit"}}>↻</button></div>
+      </Card>
+      <Card>
+        <div style={{fontSize:12,fontWeight:700,color:C.text3,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:12}}>Informations{patient.admissionDone&&<span style={{marginLeft:8,fontSize:10,background:C.tealLight,color:C.teal,padding:"1px 6px",borderRadius:10}}>Patient</span>}</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><FInput label="Nom" value={f.nom} onChange={e=>set("nom",e.target.value)}/><FInput label="Prénom" value={f.prenom} onChange={e=>set("prenom",e.target.value)}/></div>
+        <FInput label="Date de naissance" type="date" value={f.ddn} onChange={e=>set("ddn",e.target.value)}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><FInput label="Poids (kg)" type="number" inputMode="decimal" value={f.poids} onChange={e=>set("poids",e.target.value)}/><FInput label="Taille (cm)" type="number" inputMode="decimal" value={f.taille} onChange={e=>set("taille",e.target.value)}/></div>
+        <FInput label="Sport" value={f.sport} onChange={e=>set("sport",e.target.value)}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><FInput label="Niveau" value={f.niveauSport} onChange={e=>set("niveauSport",e.target.value)}/><FInput label="Fréquence" value={f.frequenceSport} onChange={e=>set("frequenceSport",e.target.value)}/></div>
+        {/* CÔTÉ OPÉRÉ */}
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:12,color:C.text2,fontWeight:600,display:"block",marginBottom:6}}>Côté opéré</label>
+          <div style={{display:"flex",gap:8}}>
+            {[["gauche","⬅️ Genou gauche"],["droit","➡️ Genou droit"]].map(([v,l])=>(
+              <button key={v} onClick={()=>setF(x=>({...x,coteOpere:v}))} style={{flex:1,padding:"10px 8px",borderRadius:10,border:`1.5px solid ${f.coteOpere===v?C.teal:C.border}`,background:f.coteOpere===v?C.tealLight:"#F9F8F4",color:f.coteOpere===v?C.teal:C.text2,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{fontSize:12,fontWeight:700,color:C.text3,textTransform:"uppercase",letterSpacing:"0.05em",margin:"12px 0 8px"}}>Chirurgie</div>
+        <FInput label="Date d'opération" type="date" value={f.dateOp} onChange={e=>set("dateOp",e.target.value)}/>
+        <FSelect label="Greffon" value={f.greffon} onChange={e=>set("greffon",e.target.value)}><option value="">–</option>{["DIDT","KJ","Tendon quadricipital","Allogreffe"].map(g=><option key={g}>{g}</option>)}</FSelect>
+        <FInput label="Chirurgien" value={f.chirurgien} onChange={e=>set("chirurgien",e.target.value)}/>
+        <div style={{marginBottom:12}}><label style={{fontSize:12,color:C.text2,fontWeight:600,display:"block",marginBottom:6}}>Phase</label><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{PHASES.map((p,i)=><button key={i} onClick={()=>setF(x=>({...x,phase:i}))} style={{padding:"4px 10px",borderRadius:20,border:"none",background:f.phase===i?p.color:p.bg,color:f.phase===i?"#fff":p.color,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{p.short}</button>)}</div></div>
+        <Btn primary full onClick={()=>onUpdate({...patient,...f})}>💾 Enregistrer</Btn>
+      </Card>
+      {bilans.length>0&&(<Card>
+        <div style={{fontSize:12,fontWeight:700,color:C.text3,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:4}}>🔔 Calendrier des bilans</div>
+        <div style={{fontSize:11,color:C.text3,marginBottom:10}}>Cliquez pour accéder au suivi</div>
+        {bilans.map(b=>{const past=b.joursRestants<0,soon=!past&&b.joursRestants<=14;return(
+          <button key={b.months} onClick={()=>goToTracking(b.months)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,marginBottom:6,background:past?C.greenLight:soon?C.amberLight:"#F9F8F4",border:`1px solid ${past?C.green+"44":soon?C.amber+"44":C.border}`,cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+            <span>{past?"✅":soon?"⚠️":"🗓"}</span>
+            <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13}}>{b.label}</div><div style={{fontSize:11,color:C.text2}}>{b.desc}</div></div>
+            <div style={{fontSize:12,fontWeight:700,color:past?C.green:soon?C.amber:C.text3}}>{past?`J+${Math.abs(b.joursRestants)}`:`J-${b.joursRestants}`}</div>
+          </button>);})}
+      </Card>)}
+    </div>
+  );
+}
+
+// ─── BILAN ────────────────────────────────────────────────
+function KineBilan({patient,onUpdate}){
+  const [subTab,setSubTab]=useState("mesures");
+  return(
+    <div style={{paddingTop:14}}>
+      <div style={{display:"flex",gap:6,marginBottom:14}}>
+        {[["mesures","📏 Mesures"],["suivi","📈 Suivi"],["questionnaires","📋 Questionnaires"]].map(([v,l])=>(
+          <button key={v} onClick={()=>setSubTab(v)} style={{flex:1,padding:"8px 0",borderRadius:10,border:"none",background:subTab===v?C.teal:"#F9F8F4",color:subTab===v?"#fff":C.text2,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
+        ))}
+      </div>
+      {subTab==="mesures"&&<KineMesures patient={patient} onUpdate={onUpdate}/>}
+      {subTab==="suivi"&&<KineSuivi patient={patient}/>}
+      {subTab==="questionnaires"&&<KineQuestionnaires patient={patient} onUpdate={onUpdate}/>}
+    </div>
+  );
+}
+
+// ─── MESURES (iframe HTML natif) ──────────────────────────
+function KineMesures({patient,onUpdate}){
+  const phaseConfig=PHASE_MESURES[patient.phase]||PHASE_MESURES[0];
+  // Détermine le côté opéré une seule fois
+  const coteOpere=patient.coteOpere||"gauche";
+  const opEst="gauche"===coteOpere?"gauche":"droit";
+  const [saved,setSaved]=useState(false);
+
+  useEffect(()=>{
+    const handler=e=>{
+      if(e.data?.type==="LCA_SAVE_MESURES"){
+        const d={...e.data.data,phase:patient.phase,aclrsi_score:calcACLRSI(patient.aclrsi),ikdc_score:calcIKDC(patient.ikdc)};
+        onUpdate({...patient,sessions:[...(patient.sessions||[]),d]});
+        setSaved(true);setTimeout(()=>setSaved(false),2000);
+      }
+    };
+    window.addEventListener("message",handler);
+    return()=>window.removeEventListener("message",handler);
+  },[patient,onUpdate]);
+
+  // Construction du HTML une seule fois par phase + coteOpere
+  const html=useMemo(()=>{
+    const isLeftOp=coteOpere==="gauche";
+    const allFields=phaseConfig.sections.flatMap(s=>s.fields);
+    const rendered=new Set();
+
+    const rowHTML=(f)=>{
+      if(f.hidden||rendered.has(f.key)) return "";
+      if(f.pair){
+        rendered.add(f.key);rendered.add(f.pair);
+        const pairField=allFields.find(ff=>ff.key===f.pair);
+        const leftKey=isLeftOp?f.key:f.pair;
+        const rightKey=isLeftOp?f.pair:f.key;
+        const lbl=f.label;
+        return `<div class="field-group">
+          <label class="field-label">${lbl}</label>
+          <div class="row2">
+            <div>
+              <div class="side-hdr ${isLeftOp?"op":"sain"}">← Gauche<br><span class="side-tag ${isLeftOp?"op":"sain"}">${isLeftOp?"opéré":"sain"}</span></div>
+              <input type="number" inputmode="decimal" name="${leftKey}" step="${f.step||1}" placeholder="–" class="num-input">
+            </div>
+            <div class="sep">↔</div>
+            <div>
+              <div class="side-hdr ${!isLeftOp?"op":"sain"}">Droite →<br><span class="side-tag ${!isLeftOp?"op":"sain"}">${!isLeftOp?"opéré":"sain"}</span></div>
+              <input type="number" inputmode="decimal" name="${rightKey}" step="${pairField?.step||f.step||1}" placeholder="–" class="num-input">
+            </div>
+          </div>
+        </div>`;
+      }
+      rendered.add(f.key);
+      if(f.type==="stroke") return `<div class="field-group">
+        <label class="field-label">${f.label}</label>
+        ${[{v:"3",l:"3 — Épanchement massif",bg:"#FDEBD0",c:"#C0392B"},{v:"2",l:"2 — Épanchement important",bg:"#FDEBD0",c:"#E67E22"},{v:"1B",l:"1B — Épanchement modéré",bg:"#FEF9E7",c:"#D4AC0D"},{v:"1A",l:"1A — Trace d'épanchement",bg:"#EAF3DE",c:"#5D8A2E"},{v:"0",l:"0 — Pas d'épanchement",bg:"#EAF3DE",c:"#3B6D11"}].map(s=>`
+          <button type="button" class="stroke-btn" data-name="${f.key}" data-val="${s.v}" style="background:${s.bg};border:1.5px solid ${s.c}66;color:${s.c}" onclick="selStroke(this)">
+            <span style="width:9px;height:9px;border-radius:50%;background:${s.c};display:inline-block;margin-right:8px;flex-shrink:0"></span>${s.l}
+          </button>`).join("")}
+        <input type="hidden" name="${f.key}" id="stroke_${f.key}">
+      </div>`;
+      if(f.type==="slider") return `<div class="field-group">
+        <label class="field-label">${f.label}</label>
+        <input type="range" name="${f.key}" min="${f.min}" max="${f.max}" value="${Math.round((f.min+f.max)/2)}" oninput="document.getElementById('sv_${f.key}').textContent=this.value" style="width:100%;accent-color:#0F6E56">
+        <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:11px;color:#aaa">${f.min}</span><span id="sv_${f.key}" style="font-size:18px;font-weight:700;color:#0F6E56">${Math.round((f.min+f.max)/2)}</span><span style="font-size:11px;color:#aaa">${f.max}</span></div>
+      </div>`;
+      if(f.type==="choice") return `<div class="field-group">
+        <label class="field-label">${f.label}</label>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          ${f.opts.map(o=>`<button type="button" class="choice-btn" data-name="${f.key}" data-val="${o}" onclick="selChoice(this)">${o}</button>`).join("")}
+        </div>
+        <input type="hidden" name="${f.key}" id="choice_${f.key}">
+      </div>`;
+      return `<div class="field-group">
+        <label class="field-label">${f.label}</label>
+        <input type="number" inputmode="decimal" name="${f.key}" step="${f.step||1}" placeholder="–" class="num-input">
+      </div>`;
+    };
+
+    return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,sans-serif;background:#F4F6F5;padding:10px;font-size:14px;color:#1a1a18}
+.sec{background:#fff;border-radius:14px;padding:14px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,0.06)}
+.sec-title{font-weight:700;font-size:13px;margin-bottom:12px}
+.field-group{margin-bottom:14px}
+.field-label{display:block;font-size:12px;color:#5F5E5A;font-weight:600;margin-bottom:6px}
+.num-input{width:100%;font-size:20px;padding:10px 12px;border:1px solid rgba(0,0,0,0.12);border-radius:10px;background:#F9F8F4;font-family:inherit;outline:none;text-align:center;font-weight:700;color:#1a1a18;-webkit-appearance:none;-moz-appearance:textfield}
+.num-input:focus{border-color:#0F6E56;background:#fff}
+.row2{display:grid;grid-template-columns:1fr 24px 1fr;gap:6px;align-items:start}
+.sep{display:flex;align-items:center;justify-content:center;padding-top:22px;color:#aaa;font-size:13px}
+.side-hdr{font-size:10px;font-weight:700;text-align:center;margin-bottom:4px;line-height:1.4}
+.side-hdr.op{color:#A32D2D}
+.side-hdr.sain{color:#3B6D11}
+.side-tag{font-size:9px;padding:1px 5px;border-radius:8px;display:inline-block}
+.side-tag.op{background:#FCEBEB;color:#A32D2D}
+.side-tag.sain{background:#EAF3DE;color:#3B6D11}
+.stroke-btn{width:100%;display:flex;align-items:center;padding:9px 12px;border-radius:10px;font-size:12px;cursor:pointer;font-family:inherit;margin-bottom:4px;font-weight:500;transition:filter 0.1s}
+.stroke-btn.sel{font-weight:700;filter:brightness(0.88)}
+.choice-btn{padding:6px 10px;border-radius:8px;border:1px solid rgba(0,0,0,0.12);background:#F9F8F4;color:#5F5E5A;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;margin:2px;transition:all 0.1s}
+.choice-btn.sel{background:#E1F5EE;border-color:#0F6E56;color:#0F6E56}
+.save-btn{width:100%;padding:14px;border-radius:12px;border:none;background:#0F6E56;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:background 0.3s}
+.save-btn.ok{background:#3B6D11}
+input[type=date],input[type=text]{width:100%;font-size:13px;padding:10px 12px;border:1px solid rgba(0,0,0,0.12);border-radius:10px;background:#F9F8F4;font-family:inherit;outline:none}
+input[type=date]:focus,input[type=text]:focus{border-color:#0F6E56}
+.extra-wrap{margin-top:6px}
+.extra-input{width:100%;font-size:16px;padding:10px;border:1px solid #6B35A844;border-radius:10px;background:#F0E9FF;font-family:inherit;outline:none;text-align:center;-webkit-appearance:none;margin-bottom:6px}
+.add-row{display:flex;gap:8px;margin-top:6px}
+.add-input{flex:1;font-size:12px;padding:7px 10px;border:1px solid rgba(0,0,0,0.12);border-radius:8px;background:#F9F8F4;font-family:inherit;outline:none}
+.add-btn{padding:7px 12px;border-radius:8px;border:none;background:#6B35A8;color:#fff;font-weight:700;cursor:pointer;font-size:12px;white-space:nowrap;font-family:inherit}
+</style></head><body>
+<div class="sec">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div><label class="field-label">Date</label><input type="date" name="date" value="${today()}"></div>
+    <div><label class="field-label">Notes</label><input type="text" name="notes" placeholder="Observations…"></div>
+  </div>
+</div>
+${phaseConfig.sections.map(sec=>`
+<div class="sec">
+  <div class="sec-title">${sec.icon} ${sec.title}</div>
+  ${sec.fields.map(f=>rowHTML(f)).join("")}
+  ${sec.id==="force"?`<div class="extra-wrap" id="extra-fields"></div>
+  <div class="add-row">
+    <input class="add-input" id="extra-label" placeholder="Ex: IJ à 90° sain (N)">
+    <button class="add-btn" onclick="addExtra()">+ Ajouter</button>
+  </div>`:""}
+</div>`).join("")}
+<div class="sec">
+  <button class="save-btn" id="save-btn" onclick="doSave()">💾 Enregistrer les mesures</button>
+</div>
+<script>
+let extraCount=0;
+function selStroke(btn){
+  const name=btn.dataset.name;
+  document.querySelectorAll('.stroke-btn[data-name="'+name+'"]').forEach(b=>b.classList.remove('sel'));
+  btn.classList.add('sel');
+  document.getElementById('stroke_'+name).value=btn.dataset.val;
+}
+function selChoice(btn){
+  const name=btn.dataset.name;
+  document.querySelectorAll('.choice-btn[data-name="'+name+'"]').forEach(b=>b.classList.remove('sel'));
+  btn.classList.add('sel');
+  document.getElementById('choice_'+name).value=btn.dataset.val;
+}
+function addExtra(){
+  const lbl=document.getElementById('extra-label').value.trim();
+  if(!lbl)return;
+  const d=document.createElement('div');
+  d.innerHTML='<label class="field-label" style="color:#6B35A8">➕ '+lbl+'</label><input class="extra-input" type="number" inputmode="decimal" name="extra_'+extraCount+'" placeholder="–"><input type="hidden" name="extra_label_'+extraCount+'" value="'+lbl+'">';
+  document.getElementById('extra-fields').appendChild(d);
+  document.getElementById('extra-label').value='';
+  extraCount++;
+}
+function doSave(){
+  const data={};
+  document.querySelectorAll('input,select,textarea').forEach(el=>{
+    if(el.name&&el.value!=='') data[el.name]=el.value;
+  });
+  window.parent.postMessage({type:'LCA_SAVE_MESURES',data},'*');
+  const btn=document.getElementById('save-btn');
+  btn.textContent='✅ Enregistré !';btn.classList.add('ok');
+  setTimeout(()=>{btn.textContent='💾 Enregistrer les mesures';btn.classList.remove('ok');},2000);
+}
+document.addEventListener('keydown',function(e){if(e.key==='Enter')doSave();});
+</script></body></html>`;
+  },[patient.phase,coteOpere]);
+
+  return(
+    <div>
+      {!patient.coteOpere&&<div style={{background:C.amberLight,border:`1px solid ${C.amber}44`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:C.amber,fontWeight:600}}>⚠️ Côté opéré non renseigné — définissez-le dans le Dossier.</div>}
+      {/* Bandeau récapitulatif côtés */}
+      {patient.coteOpere&&<div style={{display:"flex",gap:8,marginBottom:12}}>
+        <div style={{flex:1,padding:"8px 12px",borderRadius:10,textAlign:"center",
+          background:patient.coteOpere==="gauche"?"#FCEBEB":"#EAF3DE",
+          border:`1px solid ${patient.coteOpere==="gauche"?"#A32D2D":"#3B6D11"}44`}}>
+          <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",color:patient.coteOpere==="gauche"?"#A32D2D":"#3B6D11"}}>← GAUCHE</div>
+          <div style={{fontSize:13,fontWeight:700,color:patient.coteOpere==="gauche"?"#A32D2D":"#3B6D11"}}>{patient.coteOpere==="gauche"?"Opéré":"Sain"}</div>
+        </div>
+        <div style={{flex:1,padding:"8px 12px",borderRadius:10,textAlign:"center",
+          background:patient.coteOpere==="droit"?"#FCEBEB":"#EAF3DE",
+          border:`1px solid ${patient.coteOpere==="droit"?"#A32D2D":"#3B6D11"}44`}}>
+          <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",color:patient.coteOpere==="droit"?"#A32D2D":"#3B6D11"}}>DROITE →</div>
+          <div style={{fontSize:13,fontWeight:700,color:patient.coteOpere==="droit"?"#A32D2D":"#3B6D11"}}>{patient.coteOpere==="droit"?"Opéré":"Sain"}</div>
+        </div>
+      </div>}
+      <div style={{background:PHASES[patient.phase].bg,border:`1px solid ${PHASES[patient.phase].color}33`,borderRadius:12,padding:"8px 14px",marginBottom:8}}>
+        <span style={{fontSize:12,fontWeight:700,color:PHASES[patient.phase].color}}>📏 Mesures — {PHASES[patient.phase].label}</span>
+      </div>
+      {saved&&<div style={{background:C.greenLight,border:`1px solid ${C.green}44`,borderRadius:10,padding:"10px 14px",marginBottom:8,fontSize:13,fontWeight:600,color:C.green}}>✅ Mesures enregistrées !</div>}
+      <iframe srcDoc={html} style={{width:"100%",height:"950px",border:"none"}} title="Mesures" sandbox="allow-scripts allow-same-origin"/>
+    </div>
+  );
+}
+
+// ─── SUIVI GRAPHIQUES ─────────────────────────────────────
+function KineSuivi({patient}){
+  const [phaseFilter,setPhaseFilter]=useState(patient.phase);
+  const allSess=[...(patient.sessions||[])].filter(s=>s.phase===phaseFilter).sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
+
+  const Chart=({title,opKey,sainKey,threshold,inv,color})=>{
+    const d=allSess.map((s,i)=>({date:s.date?s.date.slice(5):`S${i+1}`,op:parseFloat(s[opKey])||null,sain:sainKey?parseFloat(s[sainKey])||null:null,lsiVal:opKey&&sainKey?lsi(s[opKey],s[sainKey],inv):null}));
+    if(!d.length||d.every(x=>x.op===null))return null;
+    return(<Card><div style={{fontWeight:700,fontSize:13,marginBottom:10}}>{title}</div>
+      <ResponsiveContainer width="100%" height={150}><LineChart data={d} margin={{top:5,right:10,left:-25,bottom:5}}><CartesianGrid strokeDasharray="3 3" stroke="#eee"/><XAxis dataKey="date" tick={{fontSize:9}}/><YAxis tick={{fontSize:9}}/><Tooltip/>
+        {d[0]?.sain!==null&&<Legend iconSize={8} wrapperStyle={{fontSize:10}}/>}
+        <Line type="monotone" dataKey="op" name="Opéré" stroke={color||C.teal} strokeWidth={2} dot={{r:3}} connectNulls/>
+        {sainKey&&<Line type="monotone" dataKey="sain" name="Sain" stroke="#ccc" strokeWidth={1.5} dot={{r:2}} strokeDasharray="4 2" connectNulls/>}
+        {threshold&&<ReferenceLine y={threshold} stroke={C.green} strokeDasharray="4 2" label={{value:threshold+"%",position:"right",fontSize:9,fill:C.green}}/>}
+      </LineChart></ResponsiveContainer></Card>);
+  };
+
+  const LsiChart=({title,opKey,sainKey,threshold,inv})=>{
+    const d=allSess.map((s,i)=>({date:s.date?s.date.slice(5):`S${i+1}`,lsi:lsi(s[opKey],s[sainKey],inv)}));
+    if(!d.length||d.every(x=>x.lsi===null))return null;
+    return(<Card><div style={{fontWeight:700,fontSize:13,marginBottom:10}}>{title} — LSI</div>
+      <ResponsiveContainer width="100%" height={140}><LineChart data={d} margin={{top:5,right:10,left:-25,bottom:5}}><CartesianGrid strokeDasharray="3 3" stroke="#eee"/><XAxis dataKey="date" tick={{fontSize:9}}/><YAxis domain={[0,100]} tick={{fontSize:9}}/><Tooltip/>
+        <Line type="monotone" dataKey="lsi" stroke={C.teal} strokeWidth={2} dot={{fill:C.teal,r:4}} connectNulls/>
+        {threshold&&<ReferenceLine y={threshold} stroke={C.green} strokeDasharray="4 2" label={{value:threshold+"%",position:"right",fontSize:9,fill:C.green}}/>}
+        <ReferenceLine y={70} stroke={C.amber} strokeDasharray="3 2"/>
+      </LineChart></ResponsiveContainer></Card>);
+  };
+
+  return(<div>
+    <div style={{fontSize:12,color:C.text2,marginBottom:8}}>Filtrer par phase :</div>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+      {PHASES.map((p,i)=>(<button key={i} onClick={()=>setPhaseFilter(i)} style={{padding:"5px 12px",borderRadius:20,border:"none",background:phaseFilter===i?p.color:p.bg,color:phaseFilter===i?"#fff":p.color,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{p.short}</button>))}
+    </div>
+    {allSess.length<2?<div style={{textAlign:"center",padding:"2rem",color:C.text3}}>Enregistrez au moins 2 séances pour cette phase.</div>:(<>
+      {(phaseFilter<=1)&&<><Chart title="📐 Flexion genou" opKey="flexOp" sainKey="flexSain" threshold={phaseFilter===0?90:120}/><Chart title="📐 Extension genou" opKey="extOp" color={C.blue}/></>}
+      {(phaseFilter<=1)&&<><LsiChart title="💧 Périmétrie patellaire" opKey="perPat_op" sainKey="perPat_sain"/></>}
+      {phaseFilter===0&&<Card><div style={{fontWeight:700,fontSize:13,marginBottom:10}}>😖 Douleur EVA</div>
+        <ResponsiveContainer width="100%" height={120}><LineChart data={allSess.map((s,i)=>({date:s.date?s.date.slice(5):`S${i+1}`,repos:parseFloat(s.douleurRepos)||0,marche:parseFloat(s.douleurMarche)||0}))} margin={{top:5,right:10,left:-25,bottom:5}}><CartesianGrid strokeDasharray="3 3" stroke="#eee"/><XAxis dataKey="date" tick={{fontSize:9}}/><YAxis domain={[0,10]} tick={{fontSize:9}}/><Tooltip/><Legend iconSize={8} wrapperStyle={{fontSize:10}}/><Line type="monotone" dataKey="repos" name="Repos" stroke={C.amber} strokeWidth={2} connectNulls dot={(props)=>{const {cx,cy,payload}=props;const c=payload.repos<=3?C.green:payload.repos<=6?C.amber:C.red;return <circle key={cx} cx={cx} cy={cy} r={5} fill={c} stroke="#fff" strokeWidth={1.5}/>;}}/>
+          <Line type="monotone" dataKey="marche" name="Effort" stroke={C.red} strokeWidth={2} connectNulls/><ReferenceLine y={3} stroke={C.green} strokeDasharray="3 2"/></LineChart></ResponsiveContainer></Card>}
+      {phaseFilter>=1&&<><LsiChart title="💪 Quadriceps (90°)" opKey="quadOp_90" sainKey="quadSain_90" threshold={phaseFilter===1?60:phaseFilter===2?70:phaseFilter===3?80:90}/><LsiChart title="💪 IJ (45°)" opKey="ijOp_45" sainKey="ijSain_45" threshold={70}/></>}
+      {phaseFilter>=1&&<LsiChart title="⚖️ Y-Balance antérieur" opKey="ybt_ant_op" sainKey="ybt_ant_sain" threshold={89}/>}
+      {phaseFilter>=2&&<><LsiChart title="🦘 Single hop" opKey="h1o" sainKey="h1s" threshold={phaseFilter===2?70:85}/><LsiChart title="🦘 Triple hop" opKey="h2o" sainKey="h2s" threshold={phaseFilter===2?70:85}/></>}
+      <Card><div style={{fontWeight:700,fontSize:13,marginBottom:10}}>📋 Scores questionnaires</div>
+        <ResponsiveContainer width="100%" height={150}><LineChart data={[...patient.sessions||[]].sort((a,b)=>new Date(a.date||0)-new Date(b.date||0)).map((s,i)=>({date:s.date?s.date.slice(5):`S${i+1}`,aclrsi:s.aclrsi_score||null,ikdc:s.ikdc_score||null}))} margin={{top:5,right:10,left:-25,bottom:5}}><CartesianGrid strokeDasharray="3 3" stroke="#eee"/><XAxis dataKey="date" tick={{fontSize:9}}/><YAxis domain={[0,100]} tick={{fontSize:9}}/><Tooltip/><Legend iconSize={8} wrapperStyle={{fontSize:10}}/><Line type="monotone" dataKey="aclrsi" name="ACL-RSI" stroke={C.amber} strokeWidth={2} dot={{r:3}} connectNulls/><Line type="monotone" dataKey="ikdc" name="IKDC" stroke={C.blue} strokeWidth={2} dot={{r:3}} connectNulls/><ReferenceLine y={68} stroke={C.amber} strokeDasharray="4 2"/><ReferenceLine y={85} stroke={C.blue} strokeDasharray="4 2"/></LineChart></ResponsiveContainer></Card>
+    </>)}
+  </div>);
+}
+
+// ─── QUESTIONNAIRES ────────────────────────────────────────
+function KineQuestionnaires({patient,onUpdate}){
+  const [open,setOpen]=useState(null);
+  const aclrsi=calcACLRSI(patient.aclrsi);
+  const ikdc=calcIKDC(patient.ikdc);
+  const koosScores=calcKOOS(patient.koos);
+  const mois=calcMonths(patient.dateOp);
+  const QCard=({id,score,seuils,children})=>{
+    const q=QUEST_SCHEDULE[id];const hasScore=score!==null&&score!==undefined;
+    const seuil=seuils&&hasScore?seuils.find(s=>score>=s.min):null;
+    const nextRec=mois!==null?q.recommended.find(m=>mois<=m+1):q.recommended[0];
+    const dateStr=patient.dateOp&&nextRec?fmtDate(new Date(new Date(patient.dateOp).getTime()+nextRec*30.5*86400000).toISOString()):null;
+    return(<Card><div style={{background:C.tealLight,borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:C.teal,lineHeight:1.6}}><strong>ℹ️ À remplir par le patient</strong> aux dates indiquées.<br/><span style={{color:C.teal+"bb"}}>{q.note}</span>{dateStr&&<div style={{marginTop:4,fontWeight:600}}>📅 Prochaine : {dateStr}</div>}</div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:6}}>
+        <div><div style={{fontWeight:700,fontSize:14}}>{q.label}</div><div style={{fontSize:12,color:C.text2}}>{q.desc}</div></div>
+        {hasScore?<span style={{fontSize:14,fontWeight:800,padding:"4px 14px",borderRadius:20,background:seuil?seuil.bg:"#eee",color:seuil?seuil.color:"#888"}}>{score}/100</span>:<span style={{fontSize:12,background:"#eee",color:C.text3,padding:"3px 10px",borderRadius:20}}>Non complété</span>}
+      </div>
+      <Btn sm primary={!hasScore} outlined={hasScore} onClick={()=>setOpen(open===id?null:id)}>{open===id?"Fermer ✕":hasScore?"✏️ Modifier":"📝 Remplir"}</Btn>
+      {open===id&&<div style={{marginTop:12}}>{children}</div>}
+    </Card>);
+  };
+  return(<div>
+    <QCard id="koos" score={Object.values(koosScores).length===5?Math.round(Object.values(koosScores).reduce((a,b)=>a+b,0)/5):null} seuils={[{min:70,bg:C.greenLight,color:C.green},{min:50,bg:C.amberLight,color:C.amber},{min:0,bg:C.redLight,color:C.red}]}>
+      <KOOSForm koos={patient.koos} scores={koosScores} onSave={k=>{onUpdate({...patient,koos:k});setOpen(null);}}/>
+    </QCard>
+    <QCard id="ikdc" score={ikdc} seuils={[{min:85,bg:C.greenLight,color:C.green},{min:75,bg:C.amberLight,color:C.amber},{min:0,bg:C.redLight,color:C.red}]}>
+      <IKDCForm answers={patient.ikdc} onSave={a=>{onUpdate({...patient,ikdc:a});setOpen(null);}}/>
+    </QCard>
+    <QCard id="aclrsi" score={aclrsi} seuils={[{min:68,bg:C.greenLight,color:C.green},{min:56,bg:C.amberLight,color:C.amber},{min:0,bg:C.redLight,color:C.red}]}>
+      <ACLRSIForm answers={patient.aclrsi} onSave={a=>{onUpdate({...patient,aclrsi:a});setOpen(null);}}/>
+    </QCard>
+  </div>);
+}
+
+function ACLRSIForm({answers:init,onSave}){
+  const [a,setA]=useState([...init]);
+  const set=(i,v)=>setA(x=>{const n=[...x];n[i]=v;return n;});
+  const score=calcACLRSI(a);
+  return(<div>{score!==null&&<div style={{textAlign:"center",padding:"10px",background:"#F9F8F4",borderRadius:8,marginBottom:10,fontSize:22,fontWeight:700,color:score>=68?C.green:score>=56?C.amber:C.red}}>{score}/100</div>}
+    {ACLRSI_ITEMS.map((q,i)=>(<div key={i} style={{background:"#F9F8F4",borderRadius:8,padding:"10px 12px",marginBottom:6}}><div style={{fontSize:12,lineHeight:1.5,marginBottom:6}}><strong>{i+1}.</strong> {q}</div><input type="range" min={0} max={100} step={10} value={a[i]!==null?a[i]:50} onChange={e=>set(i,parseInt(e.target.value))} style={{width:"100%",accentColor:C.teal}}/><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:2}}><span style={{fontSize:11,color:C.text3}}>0</span><span style={{fontSize:13,fontWeight:700,color:C.teal}}>{a[i]!==null?a[i]:"?"}</span><span style={{fontSize:11,color:C.text3}}>100</span></div></div>))}
+    <Btn primary full onClick={()=>onSave(a)} style={{marginTop:8}}>💾 Enregistrer ACL-RSI</Btn>
+  </div>);
+}
+
+function IKDCForm({answers:init,onSave}){
+  const [a,setA]=useState(init?[...init]:Array(10).fill(null));
+  const set=(i,v)=>setA(x=>{const n=[...x];n[i]=v;return n;});
+  const score=calcIKDC(a);
+  return(<div>{score!==null&&<div style={{textAlign:"center",padding:"10px",background:"#F9F8F4",borderRadius:8,marginBottom:10,fontSize:22,fontWeight:700,color:score>=85?C.green:score>=75?C.amber:C.red}}>{score}/100</div>}
+    {IKDC_ITEMS.map((item,i)=>(<div key={i} style={{background:"#F9F8F4",borderRadius:8,padding:"10px 12px",marginBottom:6}}><div style={{fontSize:12,fontWeight:600,marginBottom:6}}>{i+1}. {item.text}</div>
+      {item.type==="slider"?(<><input type="range" min={item.min} max={item.max} value={a[i]!==null?a[i]:Math.round((item.min+item.max)/2)} onChange={e=>set(i,parseInt(e.target.value))} style={{width:"100%",accentColor:C.teal}}/><div style={{textAlign:"center",fontSize:14,fontWeight:700,color:C.teal}}>{a[i]!==null?a[i]:"?"}</div></>):(<div style={{display:"flex",flexDirection:"column",gap:4}}>{item.opts.map(opt=>(<button key={opt} onClick={()=>set(i,opt)} style={{padding:"7px 10px",borderRadius:8,border:`1px solid ${a[i]===opt?C.teal:C.border}`,background:a[i]===opt?C.tealLight:"#fff",color:a[i]===opt?C.teal:C.text2,fontSize:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>{opt}</button>))}</div>)}
+    </div>))}
+    <Btn primary full onClick={()=>onSave(a)} style={{marginTop:8}}>💾 Enregistrer IKDC</Btn>
+  </div>);
+}
+
+function KOOSForm({koos:initKoos,scores,onSave}){
+  const [k,setK]=useState(initKoos||{pain:Array(8).fill(null),symp:Array(3).fill(null),adl:Array(5).fill(null),sport:Array(5).fill(null),qol:Array(4).fill(null)});
+  const [openSec,setOpenSec]=useState("pain");
+  const setQ=(sec,qi,v)=>setK(x=>({...x,[sec]:x[sec].map((old,i)=>i===qi?v:old)}));
+  return(<div>
+    {KOOS_SECTIONS.map(sec=>(<div key={sec.id} style={{marginBottom:8}}>
+      <button onClick={()=>setOpenSec(openSec===sec.id?null:sec.id)} style={{width:"100%",padding:"10px 14px",borderRadius:12,border:`1px solid ${C.border}`,background:C.card,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",fontFamily:"inherit"}}>
+        <span style={{fontWeight:600,fontSize:13}}>{sec.icon} {sec.title}</span>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>{scores[sec.id]!==undefined&&<span style={{fontSize:13,fontWeight:700,color:scores[sec.id]>=70?C.green:scores[sec.id]>=50?C.amber:C.red}}>{scores[sec.id]}</span>}<span style={{color:C.text3}}>{openSec===sec.id?"▲":"▼"}</span></div>
+      </button>
+      {openSec===sec.id&&(<div style={{background:"#F9F8F4",borderRadius:10,padding:"10px",marginTop:4}}>
+        {sec.questions.map((q,qi)=>(<div key={qi} style={{marginBottom:10}}><div style={{fontSize:12,fontWeight:600,marginBottom:6}}>{q}</div><div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{KOOS_OPTS.map((opt,oi)=>(<button key={oi} onClick={()=>setQ(sec.id,qi,oi)} style={{flex:1,minWidth:"fit-content",padding:"5px 4px",borderRadius:6,border:`1px solid ${k[sec.id][qi]===oi?C.teal:C.border}`,background:k[sec.id][qi]===oi?C.tealLight:"#fff",color:k[sec.id][qi]===oi?C.teal:C.text2,fontSize:9,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>{opt.split("/")[0]}</button>))}</div></div>))}
+      </div>)}
+    </div>))}
+    <Btn primary full onClick={()=>onSave(k)} style={{marginTop:8}}>💾 Enregistrer KOOS</Btn>
+  </div>);
+}
+
+// ─── PHASES ────────────────────────────────────────────────
+function KinePhases({patient,onUpdate}){
+  const [sel,setSel]=useState(patient.phase);
+  const [sub,setSub]=useState("criteres");
+  const [newCrit,setNewCrit]=useState("");
+  const ph=PHASES[sel];
+  const checkKey=`phaseChecks_${sel}`;
+  const exKey=`phaseExercises_${sel}`;
+  const advKey=`phaseAdvice_${sel}`;
+  const checks=patient[checkKey]||{};
+  const customCriteria=patient[`phaseCriteria_${sel}`]||[];
+  const allCriteria=[...ph.defaultCriteria,...customCriteria];
+  const selectedExos=patient[exKey]!==undefined?patient[exKey]:ph.exercises.map(e=>e.id);
+  const selectedAdvice=patient[advKey]!==undefined?patient[advKey]:ph.advice.map((_,i)=>i);
+  const toggleCheck=i=>{onUpdate({...patient,[checkKey]:{...checks,[i]:!checks[i]}});};
+  const addCrit=()=>{if(!newCrit.trim())return;onUpdate({...patient,[`phaseCriteria_${sel}`]:[...customCriteria,newCrit.trim()]});setNewCrit("");};
+  const removeCrit=i=>onUpdate({...patient,[`phaseCriteria_${sel}`]:customCriteria.filter((_,idx)=>idx!==i)});
+  const toggleExo=id=>{const ns=selectedExos.includes(id)?selectedExos.filter(x=>x!==id):[...selectedExos,id];onUpdate({...patient,[exKey]:ns});};
+  const toggleAdv=i=>{const ns=selectedAdvice.includes(i)?selectedAdvice.filter(x=>x!==i):[...selectedAdvice,i];onUpdate({...patient,[advKey]:ns});};
+  const allChecked=allCriteria.every((_,i)=>checks[i]);
+  return(<div style={{paddingTop:14}}>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+      {PHASES.map((p,i)=>(<button key={i} onClick={()=>setSel(i)} style={{padding:"5px 12px",borderRadius:20,border:"none",background:sel===i?p.color:p.bg,color:sel===i?"#fff":p.color,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{p.short}</button>))}
+    </div>
+    <Card style={{borderTop:`3px solid ${ph.color}`}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}><PhaseBadge phase={sel}/>{patient.phase===sel&&<span style={{fontSize:11,fontWeight:700,background:C.tealLight,color:C.teal,padding:"2px 8px",borderRadius:20}}>En cours</span>}</div>
+      <div style={{display:"flex",gap:5,marginBottom:14,flexWrap:"wrap"}}>
+        {[["criteres","✅ Critères"],["exercices","💪 Exercices"],["conseils","💡 Conseils"]].map(([v,l])=>(<button key={v} onClick={()=>setSub(v)} style={{flex:1,padding:"7px 0",borderRadius:8,border:"none",background:sub===v?ph.color:ph.bg,color:sub===v?"#fff":ph.color,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>))}
+      </div>
+      {sub==="criteres"&&(<>
+        {allCriteria.map((c,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+          <button onClick={()=>toggleCheck(i)} style={{flex:1,display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:`1.5px solid ${checks[i]?C.green:C.border}`,background:checks[i]?C.greenLight:"#F9F8F4",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+            <div style={{width:22,height:22,borderRadius:11,border:`2px solid ${checks[i]?C.green:C.text3}`,background:checks[i]?C.green:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#fff",fontSize:13,fontWeight:700}}>{checks[i]?"✓":""}</div>
+            <span style={{fontSize:13,fontWeight:checks[i]?600:400,color:checks[i]?C.green:C.text}}>{c}</span>
+          </button>
+          {i>=ph.defaultCriteria.length&&<button onClick={()=>removeCrit(i-ph.defaultCriteria.length)} style={{background:"none",border:"none",cursor:"pointer",color:C.red,fontSize:16,padding:"4px"}}>✕</button>}
+        </div>))}
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <input value={newCrit} onChange={e=>setNewCrit(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addCrit()} placeholder="Ajouter un critère personnalisé…" style={{flex:1,fontSize:12,padding:"8px 10px",border:`1px solid ${C.border}`,borderRadius:8,background:"#F9F8F4",fontFamily:"inherit",outline:"none"}}/>
+          <button onClick={addCrit} style={{padding:"8px 12px",borderRadius:8,border:"none",background:C.teal,color:"#fff",fontWeight:700,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>+ Ajouter</button>
+        </div>
+        {allChecked&&<div style={{padding:"10px 14px",background:C.greenLight,borderRadius:10,marginTop:10,fontSize:13,fontWeight:600,color:C.green}}>✅ Tous les critères validés !</div>}
+        {allChecked&&sel<4&&<Btn primary full style={{marginTop:8}} onClick={()=>{onUpdate({...patient,phase:sel+1,[`phaseChecks_${sel+1}`]:{}});setSel(sel+1);}}>→ Passer à {PHASES[sel+1].short}</Btn>}
+        {patient.phase!==sel&&<Btn full outlined style={{marginTop:10,borderColor:ph.color,color:ph.color}} onClick={()=>onUpdate({...patient,phase:sel,[`phaseChecks_${sel}`]:{}})}>Passer le patient à {ph.short}</Btn>}
+      </>)}
+      {sub==="exercices"&&(<>
+        <div style={{fontSize:12,color:C.text2,marginBottom:10}}>Cochez les exercices à prescrire :</div>
+        {ph.exercises.map(ex=>(<div key={ex.id} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",borderRadius:10,marginBottom:8,border:`1.5px solid ${selectedExos.includes(ex.id)?ph.color:C.border}`,background:selectedExos.includes(ex.id)?ph.bg:"#F9F8F4",cursor:"pointer"}} onClick={()=>toggleExo(ex.id)}>
+          <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${selectedExos.includes(ex.id)?ph.color:C.text3}`,background:selectedExos.includes(ex.id)?ph.color:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#fff",fontSize:12,fontWeight:700,marginTop:1}}>{selectedExos.includes(ex.id)?"✓":""}</div>
+          <div style={{flex:1}}><div style={{fontWeight:700,fontSize:13,color:selectedExos.includes(ex.id)?ph.color:C.text}}>{ex.name}</div><div style={{fontSize:11,color:C.text2}}>{ex.dosage} · {ex.repos}</div></div>
+        </div>))}
+      </>)}
+      {sub==="conseils"&&(<>
+        <div style={{fontSize:12,color:C.text2,marginBottom:10}}>Sélectionnez les conseils à afficher :</div>
+        {ph.advice.map((a,i)=>{const isWarn=a.alert==="warn";const bg=isWarn?C.amberLight:a.alert?C.redLight:C.tealLight;const col=isWarn?C.amber:a.alert?C.red:C.teal;return(<div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",borderRadius:10,marginBottom:8,border:`1.5px solid ${selectedAdvice.includes(i)?col:C.border}`,background:selectedAdvice.includes(i)?bg:"#F9F8F4",cursor:"pointer"}} onClick={()=>toggleAdv(i)}>
+          <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${selectedAdvice.includes(i)?col:C.text3}`,background:selectedAdvice.includes(i)?col:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#fff",fontSize:12,fontWeight:700,marginTop:1}}>{selectedAdvice.includes(i)?"✓":""}</div>
+          <div style={{flex:1}}><div style={{fontWeight:700,fontSize:13}}>{a.icon} {a.title}</div><div style={{fontSize:11,color:C.text2,lineHeight:1.4}}>{a.text}</div></div>
+        </div>);})}
+      </>)}
+    </Card>
+  </div>);
+}
+
+// ─── HISTORIQUE ────────────────────────────────────────────
+function KineHistorique({patient,onUpdate}){
+  if(!patient.sessions?.length)return <div style={{textAlign:"center",padding:"3rem 1rem",color:C.text3}}><div style={{fontSize:40,marginBottom:10}}>📋</div>Aucune séance.</div>;
+  const del=i=>{if(!confirm("Supprimer ?"))return;onUpdate({...patient,sessions:patient.sessions.filter((_,idx)=>idx!==i)});};
+  return(<div style={{paddingTop:14}}>
+    {[...patient.sessions].sort((a,b)=>new Date(b.date||0)-new Date(a.date||0)).map((s,ri)=>{
+      const i=patient.sessions.findIndex(x=>x===s);const lsiQ=lsi(s.quadOp_90,s.quadSain_90);
+      return(<Card key={ri}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontWeight:700}}>{fmtDate(s.date)}</span><PhaseBadge phase={s.phase||0} small/></div>
+          <button onClick={()=>del(i)} style={{background:"none",border:"none",cursor:"pointer",color:C.text3}}>🗑</button>
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {s.flexOp&&<span style={{fontSize:11,background:"#F9F8F4",padding:"2px 8px",borderRadius:6}}>Flex: {s.flexOp}°</span>}
+          {s.extOp!==undefined&&s.extOp!==""&&<span style={{fontSize:11,background:"#F9F8F4",padding:"2px 8px",borderRadius:6}}>Ext: {s.extOp}°</span>}
+          {lsiQ!==null&&<LSIChip val={lsiQ}/>}
+          {s.stroke&&<span style={{fontSize:11,background:STROKE_COLORS[s.stroke]?.bg||"#eee",color:STROKE_COLORS[s.stroke]?.color||C.text2,fontWeight:600,padding:"2px 8px",borderRadius:6}}>Stroke {s.stroke}</span>}
+        </div>
+        {s.notes&&<div style={{marginTop:8,fontSize:12,color:C.text2,background:"#F9F8F4",padding:"6px 10px",borderRadius:8}}>{s.notes}</div>}
+      </Card>);
+    })}
+  </div>);
+}
+
+// ─── TRACKING ──────────────────────────────────────────────
+function KineTracking({patients,onSelect,focusBilan,onClearBilan}){
+  const KeyVal=({label,value,color,bg})=>(<div style={{flex:1,background:bg||"#F9F8F4",borderRadius:10,padding:"8px 6px",textAlign:"center",minWidth:0}}><div style={{fontSize:16,fontWeight:700,color:color||C.teal,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{value||"–"}</div><div style={{fontSize:9,color:C.text3,fontWeight:600,marginTop:2,textTransform:"uppercase",letterSpacing:"0.04em",lineHeight:1.3}}>{label}</div></div>);
+
+  const renderInfos=(p,last)=>{
+    const ph=p.phase;
+    if(ph===0)return(<>
+      <KeyVal label="Extension" value={last?.extOp!==undefined&&last?.extOp!==""?last.extOp+"°":null} color={last?.extOp==0?C.green:last?.extOp>0?C.red:C.text3} bg={last?.extOp==0?C.greenLight:last?.extOp>0?C.redLight:"#F9F8F4"}/>
+      <KeyVal label="Flexion" value={last?.flexOp?last.flexOp+"°":null} color={parseFloat(last?.flexOp)>=90?C.green:C.amber} bg={parseFloat(last?.flexOp)>=90?C.greenLight:C.amberLight}/>
+      <KeyVal label="Stroke" value={last?.stroke||null} color={last?.stroke==="0"||last?.stroke==="1A"?C.green:last?.stroke?C.amber:C.text3} bg={last?.stroke==="0"||last?.stroke==="1A"?C.greenLight:last?.stroke?C.amberLight:"#F9F8F4"}/>
+      <KeyVal label="AMI" value={last?.inhibitionAMI?last.inhibitionAMI[0]:null} color={last?.inhibitionAMI?.[0]==="0"?C.green:last?.inhibitionAMI?.[0]==="1"?C.amber:last?.inhibitionAMI?C.red:C.text3} bg={last?.inhibitionAMI?.[0]==="0"?C.greenLight:last?.inhibitionAMI?.[0]==="1"?C.amberLight:last?.inhibitionAMI?C.redLight:"#F9F8F4"}/>
+    </>);
+    if(ph===1){const lsiQ=lsi(last?.quadOp_90,last?.quadSain_90);const lsiIJ=lsi(last?.ijOp_45,last?.ijSain_45);return(<>
+      <KeyVal label="Flexion" value={last?.flexOp?last.flexOp+"°":null} color={parseFloat(last?.flexOp)>=120?C.green:C.amber} bg={parseFloat(last?.flexOp)>=120?C.greenLight:C.amberLight}/>
+      <KeyVal label="Stroke" value={last?.stroke||null} color={last?.stroke==="0"?C.green:last?.stroke?C.amber:C.text3} bg={last?.stroke==="0"?C.greenLight:last?.stroke?C.amberLight:"#F9F8F4"}/>
+      <KeyVal label="LSI Quad" value={lsiQ!==null?lsiQ+"%":null} color={lsiColor(lsiQ)} bg={lsiBg(lsiQ)}/>
+      <KeyVal label="LSI IJ" value={lsiIJ!==null?lsiIJ+"%":null} color={lsiColor(lsiIJ)} bg={lsiBg(lsiIJ)}/>
+    </>);}
+    if(ph===2){const lsiQ=lsi(last?.quadOp_90,last?.quadSain_90);const lsiIJ=lsi(last?.ijOp_45,last?.ijSain_45);const lsiH=lsi(last?.h1o,last?.h1s);const lsiYBT=lsi(last?.ybt_ant_op,last?.ybt_ant_sain);return(<>
+      <KeyVal label="LSI Quad" value={lsiQ!==null?lsiQ+"%":null} color={lsiColor(lsiQ)} bg={lsiBg(lsiQ)}/>
+      <KeyVal label="LSI IJ" value={lsiIJ!==null?lsiIJ+"%":null} color={lsiColor(lsiIJ)} bg={lsiBg(lsiIJ)}/>
+      <KeyVal label="Single hop" value={lsiH!==null?lsiH+"%":null} color={lsiColor(lsiH)} bg={lsiBg(lsiH)}/>
+      <KeyVal label="Y-Balance" value={lsiYBT!==null?lsiYBT+"%":null} color={lsiColor(lsiYBT)} bg={lsiBg(lsiYBT)}/>
+    </>);}
+    if(ph===3){const lsiQ=lsi(last?.quadOp_90,last?.quadSain_90);const lsiIJ=lsi(last?.ijOp_45,last?.ijSain_45);const lsiH1=lsi(last?.h1o,last?.h1s);return(<>
+      <KeyVal label="LSI Quad" value={lsiQ!==null?lsiQ+"%":null} color={lsiColor(lsiQ)} bg={lsiBg(lsiQ)}/>
+      <KeyVal label="LSI IJ" value={lsiIJ!==null?lsiIJ+"%":null} color={lsiColor(lsiIJ)} bg={lsiBg(lsiIJ)}/>
+      <KeyVal label="Single hop" value={lsiH1!==null?lsiH1+"%":null} color={lsiColor(lsiH1)} bg={lsiBg(lsiH1)}/>
+      <KeyVal label="ACL-RSI" value={last?.aclrsi_score||null} color={last?.aclrsi_score>=56?C.green:last?.aclrsi_score?C.amber:C.text3} bg={last?.aclrsi_score>=56?C.greenLight:last?.aclrsi_score?C.amberLight:"#F9F8F4"}/>
+    </>);}
+    if(ph===4){const lsiH1=lsi(last?.h1o,last?.h1s);const lsiH2=lsi(last?.h2o,last?.h2s);const lsiSide=lsi(last?.sideHopOp,last?.sideHopSain);return(<>
+      <KeyVal label="Single hop" value={lsiH1!==null?lsiH1+"%":null} color={lsiColor(lsiH1)} bg={lsiBg(lsiH1)}/>
+      <KeyVal label="Triple hop" value={lsiH2!==null?lsiH2+"%":null} color={lsiColor(lsiH2)} bg={lsiBg(lsiH2)}/>
+      <KeyVal label="Side hop" value={lsiSide!==null?lsiSide+"%":null} color={lsiColor(lsiSide)} bg={lsiBg(lsiSide)}/>
+      <KeyVal label="ACL-RSI" value={last?.aclrsi_score||null} color={last?.aclrsi_score>=68?C.green:last?.aclrsi_score>=56?C.amber:C.red} bg={last?.aclrsi_score>=68?C.greenLight:last?.aclrsi_score>=56?C.amberLight:last?.aclrsi_score?C.redLight:"#F9F8F4"}/>
+    </>);}
+    return null;
+  };
+
+  return(<div style={{padding:16}}>
+    <div style={{fontSize:18,fontWeight:800,marginBottom:4}}>📊 Tracking global</div>
+    {focusBilan&&<div style={{background:C.tealLight,border:`1px solid ${C.teal}33`,borderRadius:10,padding:"10px 14px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div style={{fontSize:13,fontWeight:600,color:C.teal}}>📋 {BILANS.find(b=>b.months===focusBilan)?.label}</div>
+      <button onClick={onClearBilan} style={{background:"none",border:"none",cursor:"pointer",color:C.teal,fontSize:18}}>✕</button>
+    </div>}
+    {patients.length===0&&<div style={{textAlign:"center",padding:"3rem",color:C.text3}}>Aucun patient</div>}
+    {patients.map(p=>{
+      const last=p.sessions?.length?[...p.sessions].sort((a,b)=>new Date(a.date||0)-new Date(b.date||0)).slice(-1)[0]:null;
+      return(<Card key={p.id} onClick={()=>onSelect(p.id)}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <span style={{fontWeight:700,fontSize:15}}>{p.prenom} {p.nom}</span>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>{p.dateOp&&<span style={{fontSize:11,color:C.text3}}>{fmtPostOp(p.dateOp)}</span>}<PhaseBadge phase={p.phase} small/></div>
+        </div>
+        {last?<div style={{display:"flex",gap:6}}>{renderInfos(p,last)}</div>:<div style={{fontSize:12,color:C.text3,fontStyle:"italic"}}>Aucune mesure</div>}
+        {last&&<div style={{fontSize:10,color:C.text3,marginTop:6}}>Dernière mesure : {fmtDate(last.date)}</div>}
+      </Card>);
+    })}
+  </div>);
+}
+
+function KineTools(){return <div style={{padding:16}}><div style={{fontSize:18,fontWeight:800,marginBottom:16}}>🔧 Outils</div><IntervalTimer/></div>;}
+
+// ════════════════════════════════════════════════════════════
+// ESPACE PATIENT
+// ════════════════════════════════════════════════════════════
+function PatientApp({patient,onUpdate,onLogout}){
+  const [nav,setNav]=useState(patient.admissionDone?"suivi":"admission");
+  return(<div style={{display:"flex",flexDirection:"column",minHeight:"100vh"}}>
+    <div style={{background:C.teal,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
+      <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"rgba(255,255,255,0.2)",color:"#fff"}}>🧑 PATIENT</span><span style={{fontSize:13,fontWeight:700,color:"#fff"}}>{patient.prenom} {patient.nom}</span></div>
+      <button onClick={onLogout} style={{background:"rgba(255,255,255,0.15)",border:"none",borderRadius:8,padding:"5px 10px",cursor:"pointer",fontSize:11,color:"#fff",fontFamily:"inherit"}}>← Déco</button>
+    </div>
+    <div style={{flex:1,paddingBottom:80,overflowY:"auto"}}>
+      {nav==="admission"&&<PatientAdmission patient={patient} onUpdate={p=>{onUpdate(p);setNav("suivi");}}/>}
+      {nav==="suivi"&&<PatientSuivi patient={patient} onUpdate={onUpdate}/>}
+      {nav==="exercices"&&<PatientExercices patient={patient}/>}
+      {nav==="questionnaire"&&<PatientQuestionnaire patient={patient} onUpdate={onUpdate}/>}
+    </div>
+    {patient.admissionDone&&<BottomNav nav={nav} setNav={setNav} role="patient"/>}
+  </div>);
+}
+
+function PatientAdmission({patient,onUpdate}){
+  const [step,setStep]=useState(0);
+  const [consented,setConsented]=useState(false);
+  const [f,setF]=useState({nom:patient.nom||"",prenom:patient.prenom||"",ddn:patient.ddn||"",poids:"",taille:"",sport:"",niveauSport:"",frequenceSport:"",dateOp:"",greffon:"",chirurgien:"",coteOpere:""});
+  const set=(k,v)=>setF(x=>({...x,[k]:v}));
+
+  // Écran de consentement avant tout
+  if(consented!=="done") return(
+    <div style={{padding:"24px 20px",display:"flex",flexDirection:"column",minHeight:"80vh",justifyContent:"center"}}>
+      <div style={{textAlign:"center",marginBottom:24}}>
+        <div style={{fontSize:36,marginBottom:12}}>🔒</div>
+        <div style={{fontSize:20,fontWeight:800,marginBottom:8}}>Avant de commencer</div>
+        <div style={{fontSize:13,color:C.text2,lineHeight:1.7}}>Votre kinésithérapeute utilise cette application pour suivre votre rééducation. Quelques informations importantes avant de remplir vos données.</div>
+      </div>
+
+      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:24}}>
+        {[
+          {icon:"🏥",title:"Données de santé",text:"Les informations que vous renseignez (poids, date d'opération, mesures) sont des données de santé protégées par le secret médical."},
+          {icon:"📱",title:"Stockage local",text:"Vos données sont stockées uniquement dans cette application, accessible par votre kiné. Elles ne sont pas transmises à des tiers."},
+          {icon:"👤",title:"Vos droits",text:"Conformément au RGPD, vous pouvez à tout moment demander à accéder, modifier ou supprimer vos données auprès de votre kinésithérapeute."},
+          {icon:"🔑",title:"Accès sécurisé",text:"Seuls vous (via votre code) et votre kiné (via son identifiant professionnel RPPS) pouvez accéder à vos informations."},
+        ].map((item,i)=>(
+          <div key={i} style={{display:"flex",gap:12,padding:"12px 14px",background:C.card,borderRadius:12,boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+            <span style={{fontSize:20,flexShrink:0}}>{item.icon}</span>
+            <div>
+              <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>{item.title}</div>
+              <div style={{fontSize:12,color:C.text2,lineHeight:1.6}}>{item.text}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Case à cocher consentement */}
+      <button onClick={()=>setConsented(c=>!c)} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"14px 16px",background:consented?C.tealLight:C.card,borderRadius:12,border:`1.5px solid ${consented?C.teal:C.border}`,cursor:"pointer",fontFamily:"inherit",textAlign:"left",marginBottom:16,transition:"all 0.2s"}}>
+        <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${consented?C.teal:C.text3}`,background:consented?C.teal:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#fff",fontSize:14,fontWeight:700,marginTop:1}}>{consented?"✓":""}</div>
+        <div style={{fontSize:13,color:consented?C.teal:C.text,lineHeight:1.6,fontWeight:consented?600:400}}>
+          J'ai lu et je consens au traitement de mes données de santé dans le cadre de ma rééducation, conformément au RGPD et au secret médical.
+        </div>
+      </button>
+
+      <Btn primary full disabled={!consented} onClick={()=>{ if(consented) setConsented("done"); }}>
+        {consented?"Continuer →":"Cochez la case pour continuer"}
+      </Btn>
+
+      <div style={{fontSize:11,color:C.text3,textAlign:"center",marginTop:16,lineHeight:1.6}}>
+        Pour toute question sur vos données, contactez directement votre kinésithérapeute.
+      </div>
+    </div>
+  );
+  const steps=[
+    {title:"Informations personnelles",icon:"👤",valid:f.nom&&f.prenom&&f.ddn&&f.poids&&f.taille,content:(<div><div style={{fontSize:13,color:C.text2,lineHeight:1.6,marginBottom:16}}>Ces informations permettent à votre kiné de personnaliser votre programme.</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><FInput label="Nom *" value={f.nom} onChange={e=>set("nom",e.target.value)}/><FInput label="Prénom *" value={f.prenom} onChange={e=>set("prenom",e.target.value)}/></div><FInput label="Date de naissance *" type="date" value={f.ddn} onChange={e=>set("ddn",e.target.value)}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><FInput label="Poids (kg) *" type="number" inputMode="decimal" value={f.poids} onChange={e=>set("poids",e.target.value)}/><FInput label="Taille (cm) *" type="number" inputMode="decimal" value={f.taille} onChange={e=>set("taille",e.target.value)}/></div></div>)},
+    {title:"Votre pratique sportive",icon:"🏃",valid:f.sport&&f.niveauSport&&f.frequenceSport,content:(<div><FInput label="Sport principal *" value={f.sport} onChange={e=>set("sport",e.target.value)} placeholder="Football, ski…"/><FSelect label="Niveau *" value={f.niveauSport} onChange={e=>set("niveauSport",e.target.value)}><option value="">–</option>{["Loisir","Amateur (club)","Compétition régionale","Compétition nationale","Semi-pro","Professionnel"].map(g=><option key={g}>{g}</option>)}</FSelect><FInput label="Fréquence avant blessure *" value={f.frequenceSport} onChange={e=>set("frequenceSport",e.target.value)} placeholder="3 séances/semaine…"/></div>)},
+    {title:"Votre opération",icon:"🏥",valid:f.dateOp&&f.greffon&&f.chirurgien&&f.coteOpere,content:(<div>
+      <FInput label="Date d'opération *" type="date" value={f.dateOp} onChange={e=>set("dateOp",e.target.value)}/>
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:12,color:C.text2,fontWeight:600,display:"block",marginBottom:6}}>Côté opéré *</label>
+        <div style={{display:"flex",gap:8}}>
+          {[["gauche","⬅️ Genou gauche"],["droit","➡️ Genou droit"]].map(([v,l])=>(
+            <button key={v} onClick={()=>set("coteOpere",v)} style={{flex:1,padding:"12px 8px",borderRadius:10,border:`1.5px solid ${f.coteOpere===v?C.teal:C.border}`,background:f.coteOpere===v?C.tealLight:"#F9F8F4",color:f.coteOpere===v?C.teal:C.text2,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <FSelect label="Type de greffon *" value={f.greffon} onChange={e=>set("greffon",e.target.value)}><option value="">–</option><option value="DIDT">DIDT</option><option value="KJ">KJ</option><option value="QUAD">Tendon quadricipital</option><option value="Allogreffe">Allogreffe</option><option value="Je ne sais pas">Je ne sais pas</option></FSelect>
+      <FInput label="Chirurgien *" value={f.chirurgien} onChange={e=>set("chirurgien",e.target.value)} placeholder="Dr Dupont"/>
+      <div style={{padding:"10px 14px",background:C.blueLight,borderRadius:10,fontSize:12,color:C.blue}}>🔒 Accessible uniquement à votre kinésithérapeute.</div>
+    </div>)},
+  ];
+  const cur=steps[step];
+  return(<div style={{padding:"16px"}}><div style={{textAlign:"center",marginBottom:20}}><div style={{fontSize:32,marginBottom:8}}>{cur.icon}</div><div style={{fontSize:18,fontWeight:800,marginBottom:4}}>Bienvenue !</div><div style={{fontSize:13,color:C.text2}}>Aidez votre kiné en remplissant ces informations</div></div>
+    <div style={{marginBottom:16}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.text3,marginBottom:6}}><span>Étape {step+1}/{steps.length}</span><span>{Math.round(((step+1)/steps.length)*100)}%</span></div><div style={{height:5,background:"#eee",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${((step+1)/steps.length)*100}%`,background:C.teal,borderRadius:3,transition:"width 0.3s"}}/></div></div>
+    <Card><div style={{fontSize:15,fontWeight:800,marginBottom:14,color:C.teal}}>{cur.icon} {cur.title}</div>{cur.content}</Card>
+    <div style={{display:"flex",gap:10}}>{step>0&&<Btn outlined onClick={()=>setStep(s=>s-1)} style={{flex:1}}>← Retour</Btn>}{step<steps.length-1?<Btn primary style={{flex:step>0?1:undefined}} full={step===0} onClick={()=>setStep(s=>s+1)} disabled={!cur.valid}>Suivant →</Btn>:<Btn primary onClick={()=>onUpdate({...patient,...f,admissionDone:true,admissionValidated:false})} disabled={!cur.valid} style={{flex:1}}>✓ Envoyer à mon kiné</Btn>}</div>
+  </div>);
+}
+
+function PatientSuivi({patient,onUpdate}){
+  const ph=PHASES[patient.phase];
+  const j=calcDays(patient.dateOp),w=calcWeeks(patient.dateOp);
+  const last=patient.sessions?.length?[...patient.sessions].sort((a,b)=>new Date(a.date||0)-new Date(b.date||0)).slice(-1)[0]:null;
+  const lsiQ=last?lsi(last.quadOp_90,last.quadSain_90):null;
+  const [douleurAujourd,setDouleurAujourd]=useState("");
+  const [saved,setSaved]=useState(false);
+  const [note,setNote]=useState(patient.patientNote||"");
+  const [noteSaved,setNoteSaved]=useState(false);
+  const saveDouleur=()=>{if(!douleurAujourd)return;onUpdate({...patient,douleurJournal:[...(patient.douleurJournal||[]),{date:today(),val:parseInt(douleurAujourd)}]});setSaved(true);setTimeout(()=>setSaved(false),2000);setDouleurAujourd("");};
+  const saveNote=()=>{onUpdate({...patient,patientNote:note});setNoteSaved(true);setTimeout(()=>setNoteSaved(false),2000);};
+  const journalData=(patient.douleurJournal||[]).slice(-14).map(e=>({date:e.date.slice(5),val:e.val}));
+  const m=calcMonths(patient.dateOp);
+  const next=m!==null?BILANS.find(b=>m<b.months):null;
+  const jNext=next?Math.round((new Date(patient.dateOp).getTime()+next.months*30.5*86400000-Date.now())/86400000):null;
+
+  return(<div style={{padding:"16px"}}>
+    {!patient.admissionValidated&&patient.admissionDone&&<div style={{background:C.amberLight,border:`1px solid ${C.amber}33`,borderRadius:12,padding:"12px 14px",marginBottom:12}}><div style={{fontWeight:700,fontSize:13,color:C.amber}}>⏳ En attente de validation par votre kiné</div></div>}
+    {/* Carte état : 2 blocs */}
+    <Card style={{background:`linear-gradient(135deg,${ph.color},${ph.color}cc)`,border:"none"}}>
+      <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>ÉTAT ACTUEL — {ph.label}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div style={{background:"rgba(255,255,255,0.15)",borderRadius:12,padding:"12px",textAlign:"center"}}>
+          <div style={{fontSize:28,fontWeight:800,color:"#fff"}}>{w!=null?w:0}</div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.8)",fontWeight:600}}>semaines post-op</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.55)",marginTop:2}}>Op. {fmtDate(patient.dateOp)}</div>
+        </div>
+        <div style={{background:"rgba(255,255,255,0.15)",borderRadius:12,padding:"12px",textAlign:"center"}}>
+          {next&&jNext!==null?(<>
+            <div style={{fontSize:28,fontWeight:800,color:jNext<=7?"#FFD700":"#fff"}}>{jNext}</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,0.8)",fontWeight:600}}>jours avant</div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,0.55)",marginTop:2}}>{next.label}</div>
+          </>):(<><div style={{fontSize:28,fontWeight:800,color:"#fff"}}>✓</div><div style={{fontSize:11,color:"rgba(255,255,255,0.8)",fontWeight:600}}>Tous les bilans</div><div style={{fontSize:10,color:"rgba(255,255,255,0.55)",marginTop:2}}>effectués</div></>)}
+        </div>
+      </div>
+    </Card>
+    {lsiQ!==null&&<Card><div style={{fontWeight:700,fontSize:14,marginBottom:12}}>⚖️ Symétrie LSI</div><div style={{display:"flex",alignItems:"center",gap:20}}><LSICircle val={lsiQ} size={100}/><div style={{flex:1}}>{last?.quadOp_90&&<div style={{marginBottom:8}}><div style={{fontSize:11,color:C.text3}}>● Jambe Opérée</div><div style={{fontSize:18,fontWeight:700,color:C.teal}}>{last.quadOp_90} N</div></div>}{last?.quadSain_90&&<div><div style={{fontSize:11,color:C.text3}}>● Jambe Saine</div><div style={{fontSize:18,fontWeight:700}}>{last.quadSain_90} N</div></div>}</div></div></Card>}
+    {/* Dernières mesures */}
+    {last&&<Card><div style={{fontWeight:700,fontSize:14,marginBottom:10}}>📊 Mes dernières mesures <span style={{fontSize:10,background:C.tealLight,color:C.teal,padding:"2px 6px",borderRadius:10,fontWeight:400}}>Lecture seule</span></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        {last.flexOp&&<div style={{background:"#F9F8F4",borderRadius:10,padding:"10px",textAlign:"center"}}><div style={{fontSize:11,color:C.text3,marginBottom:2}}>Flexion</div><div style={{fontSize:18,fontWeight:700,color:C.teal}}>{last.flexOp}°</div></div>}
+        {last.extOp!==undefined&&last.extOp!==""&&<div style={{background:"#F9F8F4",borderRadius:10,padding:"10px",textAlign:"center"}}><div style={{fontSize:11,color:C.text3,marginBottom:2}}>Extension</div><div style={{fontSize:18,fontWeight:700,color:parseFloat(last.extOp)<=0?C.green:C.amber}}>{last.extOp}°</div></div>}
+        {last.stroke&&<div style={{background:STROKE_COLORS[last.stroke]?.bg||"#eee",borderRadius:10,padding:"10px",textAlign:"center"}}><div style={{fontSize:11,color:C.text3,marginBottom:2}}>Stroke</div><div style={{fontSize:18,fontWeight:700,color:STROKE_COLORS[last.stroke]?.color||C.text2}}>{last.stroke}</div></div>}
+        {last.douleurRepos!==undefined&&last.douleurRepos!==""&&<div style={{background:parseInt(last.douleurRepos||0)<=3?C.greenLight:C.amberLight,borderRadius:10,padding:"10px",textAlign:"center"}}><div style={{fontSize:11,color:C.text3,marginBottom:2}}>Douleur repos</div><div style={{fontSize:18,fontWeight:700,color:parseInt(last.douleurRepos||0)<=3?C.green:C.amber}}>{last.douleurRepos}/10</div></div>}
+      </div>
+      <div style={{fontSize:11,color:C.text3,marginTop:8}}>Dernière séance : {fmtDate(last.date)}</div>
+    </Card>}
+    {/* Journal douleur */}
+    <Card>
+      <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>😖 Ma douleur du jour</div>
+      <div style={{display:"flex",gap:3,marginBottom:6,flexWrap:"wrap"}}>
+        {[0,1,2,3,4,5,6,7,8,9,10].map(v=>(<button key={v} onClick={()=>setDouleurAujourd(v.toString())} style={{flex:1,minWidth:26,padding:"7px 0",borderRadius:6,border:"none",background:douleurAujourd===v.toString()?C.teal:v<=3?C.greenLight:v<=6?C.amberLight:C.redLight,color:douleurAujourd===v.toString()?"#fff":v<=3?C.green:v<=6?C.amber:C.red,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{v}</button>))}
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:C.text3,marginBottom:10}}><span style={{color:C.green}}>😊 Aucune</span><span style={{color:C.amber}}>😐 Modérée</span><span style={{color:C.red}}>😣 Intense</span></div>
+      <Btn primary full onClick={saveDouleur} disabled={!douleurAujourd}>{saved?"✓ Enregistré !":"Enregistrer"}</Btn>
+      {journalData.length>=2&&(<div style={{marginTop:14}}><div style={{fontSize:11,color:C.text2,fontWeight:600,marginBottom:8}}>📉 14 derniers jours</div>
+        <ResponsiveContainer width="100%" height={120}><LineChart data={journalData} margin={{top:5,right:10,left:-28,bottom:5}}><CartesianGrid strokeDasharray="3 3" stroke="#eee"/><XAxis dataKey="date" tick={{fontSize:9}}/><YAxis domain={[0,10]} tick={{fontSize:9}} ticks={[0,3,5,7,10]}/><Tooltip formatter={v=>[v+"/10","Douleur"]}/>
+          <ReferenceLine y={3} stroke={C.green} strokeDasharray="4 2" label={{value:"OK",position:"right",fontSize:9,fill:C.green}}/>
+          <ReferenceLine y={7} stroke={C.red} strokeDasharray="4 2" label={{value:"⚠",position:"right",fontSize:9,fill:C.red}}/>
+          <Line type="monotone" dataKey="val" stroke={C.amber} strokeWidth={2.5} dot={(props)=>{const{cx,cy,payload}=props;const col=payload.val<=3?C.green:payload.val<=6?C.amber:C.red;return <circle key={cx} cx={cx} cy={cy} r={5} fill={col} stroke="#fff" strokeWidth={1.5}/>;}} connectNulls/>
+        </LineChart></ResponsiveContainer>
+        <div style={{display:"flex",gap:12,marginTop:4,fontSize:11}}><span style={{color:C.green}}>🟢 ≤3 OK</span><span style={{color:C.amber}}>🟡 4–6</span><span style={{color:C.red}}>🔴 ≥7 À signaler</span></div>
+      </div>)}
+    </Card>
+    {/* Objectifs */}
+    <Card style={{background:ph.bg,border:`1px solid ${ph.color}33`}}>
+      <div style={{fontWeight:700,fontSize:13,color:ph.color,marginBottom:8}}>🎯 Objectifs</div>
+      {ph.defaultCriteria.map((c,i)=>(<div key={i} style={{display:"flex",gap:6,fontSize:12,color:ph.color+"cc",marginBottom:4}}><span>✓</span>{c}</div>))}
+      {patient.phase===0&&(()=>{const [open,setOpen]=useState(false);return(<div style={{marginTop:10}}>
+        <button onClick={()=>setOpen(o=>!o)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:"rgba(255,255,255,0.5)",borderRadius:10,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+          <span style={{fontWeight:700,fontSize:12,color:ph.color}}>❓ C'est quoi le Stroke test ?</span>
+          <span style={{color:ph.color,fontSize:14}}>{open?"▲":"▼"}</span>
+        </button>
+        {open&&<div style={{padding:"10px 12px",background:"rgba(255,255,255,0.4)",borderRadius:"0 0 10px 10px",fontSize:12,color:ph.color+"bb",lineHeight:1.6}}>Le Stroke test est réalisé par votre kiné pour mesurer le gonflement du genou. Il appuie doucement sur la poche graisseuse pour déplacer le liquide, puis observe si une "vague" apparaît de l'autre côté. Résultat 0 ou 1A = objectif de la phase 1.</div>}
+      </div>);})()}
+    </Card>
+    {/* Conseils */}
+    {(()=>{const advKey=`phaseAdvice_${patient.phase}`;const selAdv=patient[advKey]!==undefined?patient[advKey]:ph.advice.map((_,i)=>i);const vis=ph.advice.filter((_,i)=>selAdv.includes(i));return vis.length>0?(<Card><div style={{fontWeight:700,fontSize:13,marginBottom:10}}>💡 Conseils de votre kiné</div>{vis.map((a,i)=>{const isWarn=a.alert==="warn";const bg=isWarn?C.amberLight:a.alert?C.redLight:C.tealLight;const col=isWarn?C.amber:a.alert?C.red:C.teal;return(<div key={i} style={{display:"flex",gap:10,padding:"10px 12px",borderRadius:10,marginBottom:8,background:bg,border:`1px solid ${col}33`}}><span style={{fontSize:18}}>{a.icon}</span><div><div style={{fontWeight:700,fontSize:12,marginBottom:2,color:col}}>{a.title}</div><div style={{fontSize:12,color:col+"bb",lineHeight:1.5}}>{a.text}</div></div></div>);})}</Card>):null;})()}
+    {/* Note libre */}
+    <Card>
+      <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>📝 Ma note personnelle</div>
+      <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Ressentis, questions pour votre kiné…" style={{width:"100%",fontSize:13,padding:"8px 10px",border:`0.5px solid ${C.border}`,borderRadius:8,background:"#F9F8F4",fontFamily:"inherit",minHeight:80,resize:"vertical",boxSizing:"border-box"}}/>
+      <Btn sm primary onClick={saveNote} style={{marginTop:8}}>{noteSaved?"✓ Enregistré !":"💾 Sauvegarder"}</Btn>
+    </Card>
+  </div>);
+}
+
+function PatientExercices({patient}){
+  const ph=PHASES[patient.phase];
+  const exKey=`phaseExercises_${patient.phase}`;
+  const selectedExos=patient[exKey]!==undefined?patient[exKey]:ph.exercises.map(e=>e.id);
+  const visibleExos=ph.exercises.filter(e=>selectedExos.includes(e.id));
+  const [selEx,setSelEx]=useState(null);
+  const [ytLoaded,setYtLoaded]=useState(false);
+  const [timerSec,setTimerSec]=useState(null);
+  const [timerRunning,setTimerRunning]=useState(false);
+  const [timerElapsed,setTimerElapsed]=useState(0);
+  const [douleur,setDouleur]=useState(2);
+  const [rpe,setRpe]=useState(5);
+  const [evalDone,setEvalDone]=useState(false);
+  const [showAdvice,setShowAdvice]=useState(true);
+  const timerRef=useRef(null);
+  useEffect(()=>{if(timerRunning){timerRef.current=setInterval(()=>setTimerElapsed(e=>{if(timerSec&&e+1>=timerSec){clearInterval(timerRef.current);setTimerRunning(false);return e;}return e+1;}),1000);}else clearInterval(timerRef.current);return()=>clearInterval(timerRef.current);},[timerRunning,timerSec]);
+  const resetTimer=()=>{clearInterval(timerRef.current);setTimerRunning(false);setTimerElapsed(0);};
+  const startExo=i=>{const ex=visibleExos[i];setSelEx(i);setYtLoaded(false);setEvalDone(false);setShowAdvice(true);setTimerSec(ex.duree*60);resetTimer();};
+  if(selEx!==null&&!evalDone){
+    const ex=visibleExos[selEx];const remaining=timerSec?timerSec-timerElapsed:0;const mm=Math.floor(remaining/60),ss=remaining%60;const pct=timerSec?(timerElapsed/timerSec)*100:0;
+    return(<div style={{padding:"16px"}}>
+      <button onClick={()=>{setSelEx(null);resetTimer();}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",marginBottom:10}}>←</button>
+      {showAdvice&&(<Card style={{background:C.tealLight,border:`1px solid ${C.teal}33`}}>
+        <div style={{fontWeight:700,fontSize:13,color:C.teal,marginBottom:6}}>💡 Avant de commencer</div>
+        <div style={{fontSize:13,color:C.teal+"cc",lineHeight:1.7,marginBottom:4}}>{ex.advice}</div>
+        <div style={{fontSize:12,color:C.teal,fontStyle:"italic"}}>🎯 En conscience, sans aller trop vite. Faites souvent un petit peu plutôt que trop d'un coup.</div>
+        <Btn sm onClick={()=>setShowAdvice(false)} style={{marginTop:8,background:C.teal,color:"#fff",border:"none"}}>Commencer →</Btn>
+      </Card>)}
+      <Card><div style={{fontWeight:800,fontSize:16,marginBottom:4}}>{ex.name}</div><div style={{fontSize:13,color:C.text2,lineHeight:1.6,marginBottom:8}}>{ex.desc}</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{ex.tags.map(t=>(<span key={t} style={{fontSize:10,background:ph.bg,color:ph.color,fontWeight:600,padding:"2px 8px",borderRadius:20}}>{t}</span>))}</div></Card>
+      <Card><div style={{fontWeight:700,fontSize:13,marginBottom:10}}>🎬 Vidéo démo</div>
+        {!ytLoaded?(<div style={{borderRadius:12,overflow:"hidden",background:`linear-gradient(135deg,${ph.color}cc,${ph.color}88)`,height:160,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",gap:8}} onClick={()=>setYtLoaded(true)}><div style={{width:52,height:52,borderRadius:26,background:"rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>▶</div><div style={{fontSize:13,color:"#fff",fontWeight:600}}>{ex.name}</div></div>):(<div style={{borderRadius:12,overflow:"hidden",position:"relative",paddingTop:"56.25%"}}><iframe src={`https://www.youtube.com/embed/${ex.ytId}?autoplay=1&rel=0`} allow="autoplay; encrypted-media" allowFullScreen style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",border:"none"}}/></div>)}
+      </Card>
+      <Card><div style={{fontWeight:700,fontSize:13,marginBottom:10}}>⏱ Timer — {ex.dosage}</div>
+        <div style={{textAlign:"center",marginBottom:10}}><div style={{fontSize:48,fontWeight:800,color:timerSec&&timerElapsed>=timerSec?C.green:C.teal,fontVariantNumeric:"tabular-nums"}}>{String(mm).padStart(2,"0")}:{String(ss).padStart(2,"0")}</div>{timerSec&&<div style={{height:6,background:"#eee",borderRadius:3,overflow:"hidden",margin:"8px 0"}}><div style={{height:"100%",width:pct+"%",background:C.teal,borderRadius:3,transition:"width 1s linear"}}/></div>}</div>
+        <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap"}}>
+          <Btn outlined sm onClick={resetTimer}>↺</Btn>
+          <button onClick={()=>setTimerRunning(r=>!r)} style={{width:52,height:52,borderRadius:26,border:"none",background:timerRunning?C.amber:C.teal,color:"#fff",fontSize:20,cursor:"pointer",boxShadow:`0 4px 14px ${timerRunning?C.amber:C.teal}55`}}>{timerRunning?"⏸":"▶"}</button>
+          {[30,60,120,300].map(s=>(<button key={s} onClick={()=>{setTimerSec(s);resetTimer();}} style={{padding:"5px 10px",borderRadius:8,border:`1px solid ${C.border}`,background:timerSec===s?C.tealLight:"#F9F8F4",color:timerSec===s?C.teal:C.text2,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>{s<60?s+"s":s/60+"min"}</button>))}
+        </div>
+      </Card>
+      <Card><div style={{fontWeight:700,fontSize:14,marginBottom:14}}>📊 Après l'exercice</div>
+        <div style={{fontSize:12,fontWeight:600,color:C.text2,marginBottom:8}}>Douleur <span style={{float:"right",fontSize:11,color:C.teal}}>Objectif ≤ 3/10</span></div>
+        <div style={{display:"flex",gap:3,marginBottom:14}}>{[0,1,2,3,4,5,6,7,8,9,10].map(v=>(<button key={v} onClick={()=>setDouleur(v)} style={{flex:1,padding:"7px 0",borderRadius:6,border:"none",background:douleur===v?C.teal:v<=3?C.greenLight:v<=6?C.amberLight:C.redLight,color:douleur===v?"#fff":v<=3?C.green:v<=6?C.amber:C.red,fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>{v}</button>))}</div>
+        <div style={{fontSize:12,fontWeight:600,color:C.text2,marginBottom:8}}>Difficulté (RPE)</div>
+        <div style={{display:"flex",gap:4,marginBottom:4}}>{[2,4,5,7,9].map(v=>(<button key={v} onClick={()=>setRpe(v)} style={{flex:1,padding:"8px 0",borderRadius:8,border:"none",background:rpe===v?C.teal:"#F9F8F4",color:rpe===v?"#fff":C.text2,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{v}</button>))}</div>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:C.text3,marginBottom:12}}><span>Trop facile</span><span>Idéal</span><span>Trop difficile</span></div>
+        <div style={{padding:"10px 12px",background:C.tealLight,borderRadius:10,marginBottom:12}}><div style={{fontSize:12,fontWeight:700,color:C.teal,marginBottom:2}}>🤖 Recommandation</div><div style={{fontSize:11,color:C.teal+"bb"}}>{rpe<=3?"Augmentez légèrement.":rpe>=7?"Réduisez la charge.":"Intensité idéale."}{douleur>3?" ⚠️ Douleur > 3/10 — prévenez votre kiné.":""}</div></div>
+        <Btn primary full onClick={()=>setEvalDone(true)}>Valider ✓</Btn>
+      </Card>
+    </div>);
+  }
+  return(<div style={{padding:"16px"}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}><div style={{fontSize:18,fontWeight:800}}>Mes Exercices</div><span style={{fontSize:11,background:ph.bg,color:ph.color,fontWeight:700,padding:"3px 10px",borderRadius:20}}>{visibleExos.length} prescrits</span></div>
+    <div style={{fontSize:13,color:C.text2,marginBottom:4}}>{ph.label} — {ph.timing}</div>
+    <div style={{background:C.tealLight,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:C.teal,lineHeight:1.6}}>💡 En conscience, sans aller trop vite. Mise en charge équilibrée. Souvent un petit peu plutôt que trop d'un coup.</div>
+    {visibleExos.length===0&&<div style={{textAlign:"center",padding:"2rem",color:C.text3}}>Votre kiné n'a pas encore sélectionné d'exercices.</div>}
+    {visibleExos.map((ex,i)=>(<Card key={ex.id} onClick={()=>startExo(i)} style={{marginBottom:10}}>
+      <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+        <div style={{width:72,height:60,borderRadius:12,background:`linear-gradient(135deg,${ph.color}cc,${ph.color}88)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0,position:"relative"}}>🏋️<span style={{position:"absolute",bottom:3,right:3,fontSize:9,background:"rgba(0,0,0,0.4)",color:"#fff",padding:"1px 4px",borderRadius:4}}>{ex.duree}min</span></div>
+        <div style={{flex:1}}><div style={{fontWeight:700,fontSize:13,marginBottom:2}}>{ex.name}</div><div style={{fontSize:11,color:C.text2,marginBottom:6,lineHeight:1.4}}>{ex.desc}</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}><span style={{fontSize:10,background:ph.bg,color:ph.color,fontWeight:600,padding:"2px 7px",borderRadius:6}}>📊 {ex.dosage}</span><span style={{fontSize:10,background:"#F9F8F4",color:C.text2,padding:"2px 7px",borderRadius:6}}>⏸ {ex.repos}</span><span style={{fontSize:10,background:C.tealLight,color:C.teal,padding:"2px 7px",borderRadius:6}}>🎬 Vidéo</span></div></div>
+        <span style={{fontSize:18,color:C.teal}}>▶</span>
+      </div>
+    </Card>))}
+  </div>);
+}
+
+function PatientQuestionnaire({patient,onUpdate}){
+  const [open,setOpen]=useState(null);
+  const mois=calcMonths(patient.dateOp);
+  const aclrsi=calcACLRSI(patient.aclrsi);
+  const ikdc=calcIKDC(patient.ikdc);
+  const koosScores=calcKOOS(patient.koos);
+  const QBlock=({id,score,seuils,children})=>{
+    const q=QUEST_SCHEDULE[id];const hasScore=score!==null&&score!==undefined;
+    const nextRec=mois!==null?q.recommended.find(m=>mois<=m+1):q.recommended[0];
+    const dateStr=patient.dateOp&&nextRec?fmtDate(new Date(new Date(patient.dateOp).getTime()+nextRec*30.5*86400000).toISOString()):null;
+    const isTime=mois!==null&&q.recommended.some(m=>Math.abs(mois-m)<=1);
+    const seuil=seuils&&hasScore?seuils.find(s=>score>=s.min):null;
+    return(<Card style={{border:isTime?`1.5px solid ${C.teal}`:undefined}}>
+      {isTime&&<div style={{fontSize:11,fontWeight:700,color:C.teal,background:C.tealLight,padding:"4px 10px",borderRadius:8,marginBottom:8,display:"inline-block"}}>⏰ C'est le moment !</div>}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6,flexWrap:"wrap",gap:6}}>
+        <div><div style={{fontWeight:700,fontSize:14}}>{q.label}</div><div style={{fontSize:12,color:C.text2}}>{q.desc}</div></div>
+        {hasScore?<span style={{fontSize:14,fontWeight:800,padding:"4px 14px",borderRadius:20,background:seuil?seuil.bg:"#eee",color:seuil?seuil.color:"#888"}}>{score}/100</span>:<span style={{fontSize:12,background:"#eee",color:C.text3,padding:"3px 10px",borderRadius:20}}>Non rempli</span>}
+      </div>
+      <div style={{fontSize:12,color:C.text2,marginBottom:8}}>{q.note}</div>
+      {dateStr&&<div style={{fontSize:12,fontWeight:600,color:C.teal,marginBottom:10}}>📅 Prochaine date : {dateStr}</div>}
+      <Btn sm primary={!hasScore||isTime} outlined={hasScore&&!isTime} onClick={()=>setOpen(open===id?null:id)}>{open===id?"Fermer ✕":hasScore?"✏️ Modifier":"📝 Remplir"}</Btn>
+      {open===id&&<div style={{marginTop:12}}>{children}</div>}
+    </Card>);
+  };
+  return(<div style={{padding:"16px"}}>
+    <div style={{fontSize:18,fontWeight:800,marginBottom:4}}>Mes Questionnaires</div>
+    <div style={{fontSize:13,color:C.text2,marginBottom:16}}>À remplir vous-même aux dates indiquées. Ils permettent à votre kiné de suivre votre récupération.</div>
+    <QBlock id="koos" score={Object.values(koosScores).length===5?Math.round(Object.values(koosScores).reduce((a,b)=>a+b,0)/5):null} seuils={[{min:70,bg:C.greenLight,color:C.green},{min:50,bg:C.amberLight,color:C.amber},{min:0,bg:C.redLight,color:C.red}]}>
+      <KOOSForm koos={patient.koos} scores={koosScores} onSave={k=>{onUpdate({...patient,koos:k});setOpen(null);}}/>
+    </QBlock>
+    <QBlock id="ikdc" score={ikdc} seuils={[{min:85,bg:C.greenLight,color:C.green},{min:75,bg:C.amberLight,color:C.amber},{min:0,bg:C.redLight,color:C.red}]}>
+      <IKDCForm answers={patient.ikdc} onSave={a=>{onUpdate({...patient,ikdc:a});setOpen(null);}}/>
+    </QBlock>
+    <QBlock id="aclrsi" score={aclrsi} seuils={[{min:68,bg:C.greenLight,color:C.green},{min:56,bg:C.amberLight,color:C.amber},{min:0,bg:C.redLight,color:C.red}]}>
+      <ACLRSIForm answers={patient.aclrsi} onSave={a=>{onUpdate({...patient,aclrsi:a});setOpen(null);}}/>
+    </QBlock>
+  </div>);
+}
+
+// ─── SHARED ────────────────────────────────────────────────
+function BottomNav({nav,setNav,role,badge}){
+  const items=role==="kine"?[["patients","🧑‍⚕️","Patients"],["tracking","📊","Tracking"],["tools","🔧","Tools"]]:[["suivi","📊","Mon Suivi"],["exercices","💪","Exercices"],["questionnaire","📋","Questionnaires"]];
+  return(<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:C.card,borderTop:`0.5px solid ${C.border}`,display:"flex",zIndex:100}}>
+    {items.map(([v,ic,lb])=>(<button key={v} onClick={()=>setNav(v)} style={{flex:1,padding:"10px 0 12px",border:"none",background:"none",cursor:"pointer",fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:2,position:"relative"}}>
+      <span style={{fontSize:20}}>{ic}</span><span style={{fontSize:10,fontWeight:700,color:nav===v?C.teal:C.text3}}>{lb}</span>
+      {nav===v&&<div style={{width:20,height:3,borderRadius:2,background:C.teal,marginTop:1}}/>}
+      {v==="patients"&&badge>0&&<div style={{position:"absolute",top:6,right:"18%",width:16,height:16,borderRadius:8,background:C.amber,color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>{badge}</div>}
+    </button>))}
+  </div>);
+}
+
+function IntervalTimer(){
+  const [work,setWork]=useState(10);const[rest,setRest]=useState(5);const[reps,setReps]=useState(15);
+  const [state,setState]=useState("idle");const[phase,setPhase]=useState("work");const[elapsed,setElapsed]=useState(0);const[rep,setRep]=useState(0);
+  const ref=useRef(null);
+  useEffect(()=>{if(state==="running"){ref.current=setInterval(()=>{setElapsed(e=>{const dur=phase==="work"?work:rest;if(e+1>=dur){if(phase==="work"){setRep(r=>{if(r+1>=reps){clearInterval(ref.current);setState("done");return r;}setPhase("rest");setElapsed(0);return r+1;});}else setPhase("work");return 0;}return e+1;});},1000);}else clearInterval(ref.current);return()=>clearInterval(ref.current);},[state,phase,work,rest,reps]);
+  const dur=phase==="work"?work:rest,remaining=Math.max(0,dur-elapsed),pct=(elapsed/Math.max(1,dur))*100;
+  const col=state==="done"?C.green:phase==="work"?C.teal:C.amber;
+  const r=52,circ=2*Math.PI*r;
+  const reset=()=>{clearInterval(ref.current);setState("idle");setElapsed(0);setRep(0);setPhase("work");};
+  const PRESETS=[{n:"Iso quadri",w:10,r:5,rp:40},{n:"Contraction",w:20,r:10,rp:20},{n:"Renforcement",w:30,r:15,rp:15},{n:"Tabata",w:20,r:10,rp:8}];
+  return(<div>
+    <Card style={{textAlign:"center"}}>
+      <div style={{display:"inline-block",position:"relative",width:160,height:160,marginBottom:12}}>
+        <svg width={160} height={160} viewBox="0 0 120 120"><circle cx={60} cy={60} r={r} fill="none" stroke="#eee" strokeWidth={8}/><circle cx={60} cy={60} r={r} fill="none" stroke={col} strokeWidth={8} strokeDasharray={`${(1-pct/100)*circ} ${circ}`} strokeLinecap="round" transform="rotate(-90 60 60)" style={{transition:"stroke-dasharray 0.9s linear"}}/></svg>
+        <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center"}}>
+          <div style={{fontSize:11,fontWeight:700,color:col,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>{state==="done"?"TERMINÉ":state==="idle"?"PRÊT":phase==="work"?"TRAVAIL":"REPOS"}</div>
+          <div style={{fontSize:32,fontWeight:800,color:col,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{state==="done"?"✓":String(remaining).padStart(2,"0")}</div>
+          {state!=="idle"&&state!=="done"&&<div style={{fontSize:10,color:C.text3,marginTop:2}}>Rép. {rep+1}/{reps}</div>}
+        </div>
+      </div>
+      <div style={{display:"flex",justifyContent:"center",gap:16}}>
+        <button onClick={reset} style={{width:44,height:44,borderRadius:22,border:`2px solid ${C.border}`,background:"#F9F8F4",fontSize:18,cursor:"pointer"}}>↺</button>
+        <button onClick={()=>setState(s=>s==="running"?"paused":s==="done"?"idle":"running")} style={{width:64,height:64,borderRadius:32,border:"none",background:col,color:"#fff",fontSize:26,cursor:"pointer",boxShadow:`0 4px 16px ${col}55`}}>{state==="running"?"⏸":"▶"}</button>
+        {(state==="running"||state==="paused")&&<button onClick={()=>{setElapsed(0);setPhase(p=>p==="work"?"rest":"work");}} style={{width:44,height:44,borderRadius:22,border:`2px solid ${C.border}`,background:"#F9F8F4",fontSize:18,cursor:"pointer"}}>⏭</button>}
+      </div>
+    </Card>
+    <Card>
+      <div style={{fontWeight:700,fontSize:13,marginBottom:12}}>⚡ Protocole</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+        {[["TRAVAIL",work,setWork],["REPOS",rest,setRest],["SÉRIES",reps,setReps]].map(([l,v,fn])=>(<div key={l} style={{background:"#F9F8F4",borderRadius:10,padding:"8px 0",textAlign:"center"}}><div style={{fontSize:10,color:C.text3,fontWeight:700,marginBottom:4}}>{l}</div><input type="number" inputMode="decimal" value={v} min="1" onChange={e=>{fn(parseInt(e.target.value)||1);reset();}} style={{width:"100%",fontSize:20,fontWeight:700,textAlign:"center",border:"none",background:"transparent",color:C.teal,fontFamily:"inherit",outline:"none"}}/></div>))}
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{PRESETS.map(p=>(<button key={p.n} onClick={()=>{setWork(p.w);setRest(p.r);setReps(p.rp);reset();}} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${C.border}`,background:"#F9F8F4",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:C.text2}}>{p.n}</button>))}</div>
+    </Card>
+  </div>);
+}
